@@ -1,0 +1,1756 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Rate a few games or movies, then check any title against your own taste.">
+<link rel="preconnect" href="https://upload.wikimedia.org">
+<title>Taste Radar</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: a full-screen drifting mosaic of title posters (the field), with glass panels floating over it:
+   taste on the left, verdicts on the right, the question at the bottom. One deliberate dark look: a cinema at night. */
+:root{
+ --bg:#111417;          /* the dark between posters */
+ --panel:rgba(20,24,28,.82);
+ --panel-solid:#171b1f;
+ --line:#2a3137;
+ --fg:#ece6da;          /* projector white */
+ --mut:#8e959b;
+ --acc:#7fdcc8;         /* this title / selection */
+ --warm:#f0a35e;        /* your closest title */
+ --yes:#66d6c0;--likely:#a6c264;--maybe:#e2a43e;--skip:#d65a43;
+ --disp:"Archivo","Arial Narrow",system-ui,sans-serif;
+ --body:"Archivo",system-ui,sans-serif;
+ color-scheme:dark;
+}
+html,body{height:100%}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--body);font-stretch:100%;overflow:hidden;-webkit-font-smoothing:antialiased}
+#field{position:fixed;left:0;top:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#field.pan{cursor:grabbing}
+#veil{position:fixed;inset:0;pointer-events:none;background:radial-gradient(120% 90% at 50% 40%,transparent 40%,rgba(8,10,12,.75) 100%);transition:background .5s}
+body.calib #veil{background:radial-gradient(90% 75% at 60% 45%,transparent 30%,rgba(8,10,12,.6) 100%)}
+.ic{display:inline-flex;vertical-align:middle}
+
+/* ---------- top bar ---------- */
+.top{position:fixed;top:0;left:0;right:0;z-index:5;display:flex;align-items:center;gap:12px;
+ padding-top:calc(12px + env(safe-area-inset-top,0px));padding-bottom:12px;
+ padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+ background:linear-gradient(rgba(10,12,14,.85),rgba(10,12,14,0));pointer-events:none}
+.top>*{pointer-events:auto}
+.brand{font-family:var(--disp);font-stretch:62%;font-weight:850;font-size:26px;letter-spacing:.01em;text-transform:uppercase;line-height:1;display:flex;align-items:center;gap:8px;margin-right:auto}
+.brand i{font-style:normal;color:var(--acc)}
+.seg{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:3px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.seg button{border:0;background:none;color:var(--mut);padding:7px 14px;border-radius:99px;font-weight:600}
+.seg button.on{background:var(--fg);color:var(--bg)}
+.seg .sm{display:none}.brand{white-space:nowrap}
+.ghost{background:none;border:1px solid transparent;color:var(--mut);padding:8px 10px;border-radius:99px;font-size:13px}
+.ghost:hover{color:var(--fg);border-color:var(--line)}
+#tasteBtn{display:none}
+
+/* ---------- shared controls ---------- */
+button,input{font:inherit;color:var(--fg)}
+button{cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:disabled{opacity:.4;cursor:default}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.btn{background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:12px;padding:10px 14px;display:inline-flex;align-items:center;gap:7px;font-weight:600;font-size:14px}
+.btn:hover:not(:disabled){border-color:var(--mut)}
+.btn.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.btn.go{background:var(--fg);color:var(--bg);border-color:var(--fg);font-weight:700}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.mut{color:var(--mut);font-size:14px}
+.disp{font-family:var(--disp);font-stretch:62%;font-weight:850;text-transform:uppercase;line-height:.92;letter-spacing:.005em;text-wrap:balance}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:20px;backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);box-shadow:0 30px 80px rgba(0,0,0,.45)}
+.sec{display:flex;flex-direction:column;gap:12px;padding:20px;border-top:1px solid var(--line)}
+.sec:first-child{border-top:0}
+.sec.row{flex-direction:row}
+.h2{font-family:var(--disp);font-stretch:75%;font-weight:800;font-size:19px;text-transform:uppercase;letter-spacing:.02em;line-height:1.1}
+
+/* ---------- taste dock (left) ---------- */
+#dock{position:fixed;z-index:4;left:max(16px,env(safe-area-inset-left,0px));top:calc(72px + env(safe-area-inset-top,0px));width:340px;max-height:calc(100% - 96px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));overflow:auto}
+.arch{display:flex;align-items:center;gap:10px;font-size:34px}
+.arch .ic{color:var(--acc)}
+.dna{display:flex;align-items:flex-end;gap:6px;height:118px}
+.blk{flex:1;min-width:0;border-radius:8px 8px 3px 3px;padding:8px 4px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:2px;color:#0e1114;text-align:center;position:relative;overflow:hidden}
+.blk .ic{color:#0e1114;opacity:.8}
+.blk.lt,.blk.lt .ic{color:var(--fg)}
+.bl{font-size:10px;font-weight:800;line-height:1.1;text-transform:uppercase;font-stretch:62%;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bl2{font-size:9.5px;font-weight:600;opacity:.75;line-height:1.1}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{padding:4px 10px;border-radius:99px;border:1px solid var(--line);font-size:12.5px;color:var(--mut)}
+.chip.g{border-color:color-mix(in srgb,var(--yes) 55%,transparent);color:var(--yes)}
+.chip.r{border-color:color-mix(in srgb,var(--skip) 60%,transparent);color:var(--skip)}
+
+/* ---------- question bar (bottom) ---------- */
+#ask{position:fixed;z-index:6;left:388px;right:24px;bottom:calc(20px + env(safe-area-inset-bottom,0px));display:flex;justify-content:center;transition:right .35s}
+body.sheet-open #ask{right:484px}
+.askbar{display:flex;gap:6px;align-items:center;padding:6px;border-radius:18px;width:100%;max-width:640px}
+.askbar input{flex:1;min-width:0;background:none;border:0;padding:12px 12px;font-size:16px;outline:none}
+.askbar input::placeholder{color:var(--mut)}
+.askbar .btn{white-space:nowrap}
+.hint{position:fixed;z-index:3;left:388px;right:24px;bottom:calc(92px + env(safe-area-inset-bottom,0px));text-align:center;font-size:12px;color:var(--mut);pointer-events:none;transition:opacity .3s}
+body.sheet-open .hint{opacity:0}
+
+/* ---------- verdict sheet (right) ---------- */
+#sheet{position:fixed;z-index:7;right:max(16px,env(safe-area-inset-right,0px));top:calc(72px + env(safe-area-inset-top,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));width:452px;overflow:auto;transform:translateX(calc(100% + 40px));transition:transform .45s cubic-bezier(.2,.8,.2,1);overscroll-behavior:contain}
+body.sheet-open #sheet{transform:none}
+.close{position:sticky;top:10px;float:right;margin:10px 10px -46px 0;z-index:2;width:36px;height:36px;border-radius:99px;border:1px solid var(--line);background:var(--panel-solid);color:var(--mut);display:grid;place-items:center}
+.vtitle{font-size:52px}
+.verdict{font-family:var(--disp);font-stretch:75%;font-weight:800;font-size:22px;line-height:1.15;text-wrap:balance}
+.stats{display:flex;gap:8px}
+.stat{flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.stat b{display:block;font-family:var(--disp);font-stretch:62%;font-weight:850;font-size:32px;line-height:1;font-variant-numeric:tabular-nums}
+.stat span{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);font-weight:700}
+.gauge{display:flex;justify-content:center}
+.gauge svg{width:100%;max-width:300px;height:auto;color:var(--fg)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(122px,1fr));gap:10px;padding:4px 2px}
+.tile{border-radius:14px;padding:14px 10px 10px;text-align:center;transform:rotate(-1.4deg);border:1px solid;display:flex;flex-direction:column;align-items:center;gap:3px}
+.tile:nth-child(even){transform:rotate(1.2deg)}
+.tile.ok{background:linear-gradient(160deg,#1c5a51,#10302c);border-color:color-mix(in srgb,var(--yes) 60%,transparent)}
+.tile.no{background:linear-gradient(160deg,#5e2a1f,#2c1410);border-color:color-mix(in srgb,var(--skip) 60%,transparent)}
+.tn{font-family:var(--disp);font-stretch:75%;font-weight:800;text-transform:uppercase;font-size:16px}
+.ts{font-size:12px;color:color-mix(in srgb,var(--fg) 75%,transparent);line-height:1.3}
+.tb{margin-top:6px;font-size:10.5px;font-weight:800;letter-spacing:.16em}
+.tile.ok .tb{color:var(--yes)}.tile.no .tb{color:var(--skip)}
+.wall{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.post{aspect-ratio:2/3;max-width:100%;border-radius:8px;padding:8px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+.post .pt{font-family:var(--disp);font-stretch:62%;font-weight:850;text-transform:uppercase;font-size:17px;line-height:.95;word-break:break-word}
+.post .ic{color:rgba(236,230,218,.85)}
+.radar svg{width:100%;height:auto;display:block;color:var(--fg)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;color:var(--mut)}
+.k{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.cmp{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:center;font-size:13px}
+.cmp .n{color:var(--fg);font-weight:600}
+.cmp .v{font-variant-numeric:tabular-nums;color:var(--mut);font-size:12.5px}
+.bars{grid-column:1/-1;display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+.bar{height:6px;border-radius:3px;background:rgba(255,255,255,.07);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--acc);border-radius:3px}
+.bar.a i{background:var(--warm)}
+.near{display:flex;align-items:center;gap:8px;font-size:14px}
+.rec{display:grid;grid-template-columns:44px minmax(0,1fr);gap:4px 12px;padding:14px 0;border-top:1px solid var(--line)}
+.rec:first-of-type{border-top:0}
+.rec .sc{grid-row:span 3;font-family:var(--disp);font-stretch:62%;font-weight:850;font-size:30px;line-height:1;font-variant-numeric:tabular-nums;color:var(--acc)}
+.rec .t{font-weight:700}
+.rec .row .mut{font-size:12px}
+.rec .rr{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin-top:4px}
+.rec .rr .mut{grid-column:1/-1;font-size:12px}
+.rec .btn{padding:6px 4px;font-size:12px;border-radius:9px;justify-content:center;gap:4px}
+
+/* ---------- taste check (calibration) ---------- */
+#app{position:fixed;z-index:6;left:max(16px,env(safe-area-inset-left,0px));top:calc(72px + env(safe-area-inset-top,0px));width:400px;max-height:calc(100% - 96px);overflow:auto}
+.dots{display:flex;gap:6px}
+.dot{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:none;color:var(--mut);display:grid;place-items:center;font-weight:700;font-size:13px;padding:0}
+.dot.on{border-color:var(--fg);color:var(--fg)}
+.dot.done{color:var(--acc)}
+.ctitle{font-size:60px}
+.react{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.calseg{align-self:flex-start;max-width:100%}.calseg button{font-size:13px}
+.chip.mine{color:var(--fg);display:inline-flex;align-items:center;gap:5px}
+.chip.wait{opacity:.6}
+.react .btn{justify-content:center;padding:14px 10px;font-size:15px}
+.skip{align-self:flex-start}
+
+/* ---------- status ---------- */
+#st{position:fixed;z-index:9;left:50%;top:calc(70px + env(safe-area-inset-top,0px));transform:translateX(-50%);max-width:min(520px,calc(100% - 32px));background:var(--panel-solid);border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:13.5px;color:var(--fg);box-shadow:0 12px 40px rgba(0,0,0,.5)}
+#st:empty{display:none}
+#st:not(:empty)::before{content:"";display:inline-block;width:7px;height:7px;border-radius:99px;background:var(--acc);margin-right:8px;vertical-align:1px;animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.25}}
+/* ---------- the opening: glass, question, emergence ---------- */
+.introbox,#intro{position:fixed;inset:0;z-index:8;display:grid;place-items:center;overflow:auto;padding-block:96px 32px;
+ padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px));
+ background:radial-gradient(120% 90% at 50% 40%,rgba(13,16,19,.86),rgba(9,11,13,.97))}
+.curtain{pointer-events:none;z-index:9}
+body.intro .seg,body.intro #tf,body.intro #tasteBtn{visibility:hidden}
+#glass{position:fixed;left:0;top:0;z-index:30;outline:none;touch-action:none;background:transparent}
+.moshi{position:fixed;inset:0;z-index:31;display:grid;place-items:center;pointer-events:none;padding-inline:16px;transition:opacity .35s,transform .5s cubic-bezier(.2,.8,.2,1)}
+.moshi span{font-family:"Cormorant Garamond","Cormorant",Georgia,serif;font-style:italic;font-weight:300;font-size:clamp(54px,8.6vw,132px);line-height:1;letter-spacing:.005em;color:#efe9de;text-align:center;
+ text-shadow:0 1px 0 rgba(0,0,0,.55),0 10px 40px rgba(0,0,0,.65)}
+.moshi.gone{opacity:0;transform:scale(1.04)}
+.moshibg{position:fixed;inset:0;z-index:30;background:radial-gradient(120% 90% at 40% 30%,#1a1d21,#0b0d10);transition:opacity .45s;cursor:pointer}
+body.opening #intro .q2{opacity:0}
+#intro .q2{transition:opacity .5s ease}
+
+.hellofb{position:fixed;inset:0;z-index:30;display:grid;place-items:center;background:#050507;transition:opacity .35s;cursor:pointer;padding:24px}
+.hfb-in{width:min(900px,100%);padding:clamp(28px,6vw,72px);border-radius:20px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(170deg,#1a1a1f,#101013);box-shadow:inset 0 1px 0 rgba(255,255,255,.08);display:flex;flex-direction:column;gap:14px;font-family:Inter,"Helvetica Neue",Arial,sans-serif}
+.hfb-eye{font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.38)}
+.hfb-h{font-size:clamp(72px,14vw,180px);font-weight:500;letter-spacing:-.045em;line-height:.95;color:#d4d4d9}
+.hfb-sub{color:rgba(255,255,255,.55);font-size:17px}
+.hfb-pill{align-self:flex-start;margin-top:8px;background:#ececf0;color:#0b0c0e;border-radius:6px;padding:10px 26px;font-weight:600}
+.glasshint{display:none;position:fixed;z-index:31;left:0;right:0;bottom:calc(34px + env(safe-area-inset-bottom,0px));text-align:center;pointer-events:none;
+ font-size:11px;font-weight:700;letter-spacing:.32em;text-transform:uppercase;color:rgba(236,230,218,.42);opacity:0;transition:opacity 1.2s}
+.glasshint.on{opacity:1}
+.q2{width:100%;max-width:900px;display:flex;flex-direction:column;gap:14px}
+.serifq{margin:0;font-family:"Cormorant Garamond","Cormorant",Georgia,serif;font-weight:300;font-size:clamp(42px,6.4vw,84px);line-height:1;letter-spacing:-.01em;text-wrap:balance;color:var(--fg)}
+.serifq em{font-style:italic}
+.qsub{margin:0;color:var(--mut);font-size:15px}
+.panes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:18px;margin-top:22px}
+.pane{position:relative;overflow:hidden;text-align:left;display:flex;flex-direction:column;justify-content:flex-end;gap:10px;min-height:min(46vh,340px);padding:26px 26px 24px;
+ border-radius:3px;border:1px solid rgba(236,230,218,.14);background:linear-gradient(165deg,rgba(255,255,255,.045),rgba(255,255,255,.008) 55%,rgba(0,0,0,.18));
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 30px 60px rgba(0,0,0,.35);transition:border-color .35s,transform .35s}
+.pane::after{content:"";position:absolute;inset:-20%;background:linear-gradient(112deg,transparent 42%,rgba(255,255,255,.075) 50%,transparent 58%);transform:translateX(-70%);transition:transform 1.1s cubic-bezier(.2,.8,.2,1);pointer-events:none}
+.pane:hover,.pane:focus-visible{border-color:rgba(236,230,218,.4);transform:translateY(-3px)}
+.pane:hover::after,.pane:focus-visible::after{transform:translateX(70%)}
+.pane.chosen{border-color:rgba(236,230,218,.7)}
+.pw{font-family:"Cormorant Garamond","Cormorant",Georgia,serif;font-style:italic;font-weight:300;font-size:clamp(56px,7vw,92px);line-height:.9;color:var(--fg)}
+.pm{font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--mut)}
+.pd{color:rgba(236,230,218,.72);font-size:14.5px;line-height:1.45;max-width:34ch}
+@media (max-width:700px){.introbox,#intro{padding-block:76px 24px;place-items:start center}.pane{min-height:0;padding:20px}.panes{gap:12px;margin-top:12px}.pw{font-size:54px}}
+@keyframes rise{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
+/* ---------- taste check extras ---------- */
+.row.between{justify-content:space-between}
+.ghost.tiny{font-size:12px;padding:4px 8px}
+.calseg button{font-size:12.5px;padding:7px 10px}
+.sliders{display:flex;flex-direction:column;gap:10px}
+.sl{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:center}
+.sln{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:14px}
+.slv{font-variant-numeric:tabular-nums;font-family:var(--disp);font-stretch:62%;font-weight:850;font-size:22px;color:var(--acc)}
+.sl.untouched .slv{color:var(--mut)}
+.sl input{grid-column:1/-1;width:100%;accent-color:var(--acc)}
+.sl.untouched input{opacity:.55}
+.rater{display:flex;flex-direction:column;gap:10px}
+.calsearch{width:100%;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:16px;outline:none}
+.calsearch:focus{border-color:var(--acc)}
+.results{display:flex;flex-direction:column;gap:4px}
+.res{display:flex;justify-content:space-between;align-items:center;gap:10px;text-align:left;background:none;border:1px solid transparent;border-radius:10px;padding:9px 12px}
+.res:hover,.res:focus-visible{border-color:var(--line);background:rgba(255,255,255,.03)}
+.res .rn{font-weight:600}
+.res.any .rn{color:var(--acc)}
+.picks{display:flex;flex-direction:column;gap:8px}
+.recseg{align-self:flex-start}
+.pq{font-size:34px}
+.duel{display:flex;flex-direction:column;gap:10px}
+.duel.in{animation:rise .35s cubic-bezier(.2,.8,.2,1) both}
+.pick{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;padding:16px;border-radius:16px;border:1px solid var(--line);background:rgba(255,255,255,.03);transition:border-color .15s,transform .15s}
+.pick .ic{color:var(--acc)}
+.pick:hover,.pick:focus-visible{border-color:var(--acc);transform:translateY(-1px)}
+.pt2{font-family:var(--disp);font-stretch:75%;font-weight:800;font-size:21px;line-height:1.1;text-transform:uppercase}
+.vs{align-self:center;font-size:11px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:var(--mut)}
+.deals{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.deals .btn{justify-content:center;padding:12px 8px}
+@media (prefers-reduced-motion:reduce){.pane,.pane::after{transition:none}}
+.skel{border-radius:10px;background:linear-gradient(90deg,rgba(255,255,255,.04) 0%,rgba(255,255,255,.11) 50%,rgba(255,255,255,.04) 100%);background-size:200% 100%;animation:shim 1.1s linear infinite}
+.skel.g{height:140px;width:100%;max-width:280px;align-self:center;border-radius:140px 140px 14px 14px}
+.skel.l{height:14px}.skel.s{width:60%}
+@keyframes shim{to{background-position:-200% 0}}
+
+/* ---------- phone ---------- */
+@media (max-width:899px){
+ .brand{font-size:20px;gap:6px}.top{gap:6px}.ghost{padding:8px 4px}
+ .seg button{padding:6px 10px;font-size:13px}
+ #tasteBtn{display:inline-flex;white-space:nowrap}
+ .seg .lg{display:none}.seg .sm{display:inline}
+ #tf{display:none}body.taste-open #tf{display:inline-flex}
+ #dock{left:8px;right:8px;width:auto;top:auto;bottom:calc(84px + env(safe-area-inset-bottom,0px));max-height:62%;transform:translateY(calc(100% + 120px));transition:transform .4s cubic-bezier(.2,.8,.2,1)}
+ body.taste-open #dock{transform:none}
+ #ask{left:8px;right:8px;bottom:calc(10px + env(safe-area-inset-bottom,0px))}
+ body.sheet-open #ask{right:8px}
+ .hint{left:16px;right:16px;bottom:calc(80px + env(safe-area-inset-bottom,0px))}
+ body.taste-open .hint{opacity:0}
+ #sheet{left:8px;right:8px;width:auto;top:20%;bottom:calc(78px + env(safe-area-inset-bottom,0px));transform:translateY(calc(100% + 120px))}
+ #app{left:8px;right:8px;width:auto;top:auto;bottom:calc(10px + env(safe-area-inset-bottom,0px));max-height:66%}
+ body.calwall #app{max-height:46%}
+ .ctitle{font-size:44px}.vtitle{font-size:42px}
+ .askbar .btn.sug span.l{display:none}
+}
+@media (max-width:420px){.seg button{padding:6px 8px}.brand span.w2{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.dgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.dpost{aspect-ratio:2/3;border-radius:10px;border:1px solid var(--line);padding:6px;display:flex;align-items:flex-end;text-align:left;position:relative;overflow:hidden;transition:transform .15s,border-color .15s,box-shadow .15s}
+.dpost .dn{font-size:11px;font-weight:700;line-height:1.15;text-shadow:0 1px 3px rgba(0,0,0,.9)}
+.dpost:hover{transform:translateY(-2px);border-color:var(--mut)}
+.dpost.sel{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc) inset}
+.dpost.sel::after{content:"";position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:99px;background:var(--acc) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230b0d10' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center/12px no-repeat}
+.drank{display:flex;flex-direction:column;gap:8px}
+.pick.drk{flex-direction:row;align-items:center;gap:12px;padding:12px 14px}
+.pick.drk .dnum{width:24px;height:24px;flex:none;border-radius:99px;border:1px solid var(--line);display:grid;place-items:center;font-weight:800;font-size:12px}
+.pick.drk.sel{border-color:var(--acc)}.pick.drk.sel .dnum{background:var(--acc);color:var(--bg);border-color:var(--acc)}
+.dopts{display:flex;flex-direction:column;gap:8px}
+.btn.dopt{justify-content:flex-start;text-align:left;padding:13px 14px;border-radius:14px}
+.btn.dopt.ns{color:var(--mut);border-style:dashed}
+.dother{margin-top:2px}
+.dchosen{display:grid;grid-template-columns:64px minmax(0,1fr);gap:14px;align-items:center}
+.dthumb{aspect-ratio:2/3;border-radius:9px;background-size:cover;background-position:center top;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.dchosen .ghost.tiny{margin-top:4px;padding-left:0}
+.dchosen .ctitle{font-size:28px;overflow-wrap:anywhere}
+.duel .calsearch{width:100%;box-sizing:border-box;min-width:0}
+.row.between{justify-content:space-between}
+@media (max-width:700px){.dgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+#out{transition:opacity .2s,transform .2s}
+#out.leaving{opacity:0;transform:translateY(-8px)}
+.fadein{animation:rise .4s cubic-bezier(.2,.8,.2,1) both}
+.rlist{gap:14px}
+.rhead{display:flex;flex-direction:column;gap:10px}
+.rgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 12px}
+.rc{position:relative;display:flex;flex-direction:column;gap:9px;min-width:0;animation:rise .5s cubic-bezier(.2,.8,.2,1) both}
+.rc.hero,.rc.wide{grid-column:1/-1;display:grid;gap:16px;align-items:start}
+.rc.hero{grid-template-columns:minmax(0,46%) minmax(0,1fr)}
+.rc.wide{grid-template-columns:minmax(0,30%) minmax(0,1fr);padding-top:16px;border-top:1px solid var(--line)}
+.rc.hero{padding-bottom:18px;border-bottom:1px solid var(--line)}
+.rart{position:relative;width:100%;flex:none;aspect-ratio:2/3;border-radius:12px;overflow:hidden;background-size:cover;background-position:center top;box-shadow:inset 0 0 0 1px rgba(255,255,255,.07),0 14px 30px rgba(0,0,0,.45);transition:transform .25s cubic-bezier(.2,.8,.2,1)}
+.rart::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,10,12,.55) 0%,rgba(8,10,12,0) 22%,rgba(8,10,12,0) 52%,rgba(8,10,12,.92) 100%);pointer-events:none}
+.rc.hero .rart::after,.rc.wide .rart::after{background:linear-gradient(180deg,rgba(8,10,12,.55) 0%,rgba(8,10,12,0) 26%)}
+.rc:hover .rart{transform:translateY(-3px)}
+.rm{position:absolute;z-index:2;top:8px;left:8px;display:flex;align-items:baseline;gap:4px;padding:4px 8px 4px 7px;border-radius:99px;background:rgba(8,10,12,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--z) 55%,transparent)}
+.rm b{font-family:var(--disp);font-stretch:62%;font-weight:850;font-size:17px;line-height:1;color:var(--z);font-variant-numeric:tabular-nums}
+.rm span{font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.rc.hero .rm b{font-size:24px}
+.rno{position:absolute;z-index:2;top:11px;right:10px;font-size:10px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:rgba(236,230,218,.85);text-shadow:0 1px 4px rgba(0,0,0,.8)}
+.rcap{display:flex;flex-direction:column;gap:3px}
+.rart .rcap{position:absolute;z-index:2;left:10px;right:10px;bottom:10px}
+.rtitle{font-family:var(--disp);font-stretch:62%;font-weight:850;text-transform:uppercase;font-size:21px;line-height:.92;text-wrap:balance;text-shadow:0 2px 10px rgba(0,0,0,.6)}
+.rc.hero .rtitle{font-size:36px}.rc.wide .rtitle{font-size:26px}
+.rby{font-size:11.5px;color:rgba(236,230,218,.72)}
+.rinfo{display:flex;flex-direction:column;gap:8px;min-width:0}
+.rtags{display:flex;flex-wrap:wrap;gap:5px}
+.rtag{font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:99px;background:rgba(255,255,255,.06);color:rgba(236,230,218,.8)}
+.rtag.rlen{background:none;box-shadow:inset 0 0 0 1px var(--line);color:var(--mut)}
+.rwhy{font-size:12.5px;line-height:1.4}
+.rc.hero .rwhy{font-size:14px}
+.rlab{display:block;font-size:9.5px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--acc);margin-bottom:2px}
+.rhi{display:flex;gap:6px;font-size:12px;line-height:1.35;color:var(--mut);font-style:italic}
+.rc.hero .rhi{font-size:13px}
+.rstar{color:#e6b45a;font-style:normal;flex:none}
+.rnotes{display:flex;flex-wrap:wrap;gap:5px}.rnotes .chip{font-size:11px;padding:2px 8px}
+.rplay{align-self:flex-start;background:none;border:0;padding:0;font-size:11.5px;color:var(--mut);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.rplay:hover{color:var(--fg)}
+.rover{position:absolute;z-index:3;inset:0;display:flex;flex-direction:column;justify-content:center;gap:8px;padding:10px;background:rgba(8,10,12,.86);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);opacity:0;pointer-events:none;transition:opacity .2s}
+.rc.rating .rover{opacity:1;pointer-events:auto}
+.rq{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);text-align:center}
+.rover .rr{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.rover .btn{padding:7px 4px;font-size:11.5px;border-radius:9px;justify-content:center;gap:4px}
+.rfoot{font-size:12px}
+.rnone{display:none}
+.rtag.rimdb{background:rgba(230,180,90,.14);color:#e6c27a}.rtag.rimdb b{font-weight:800}
+.rver{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;font-size:12px;line-height:1.45;color:var(--mut);padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.03);box-shadow:inset 0 0 0 1px var(--line)}
+.rver .btn{padding:6px 12px;font-size:12px}
+.rskel{display:grid;grid-template-columns:76px 1fr;gap:14px;align-items:start}.skel.rp{aspect-ratio:2/3;height:auto;border-radius:10px}
+@media (max-width:700px){.rgrid{gap:16px 10px}.rc.hero{grid-template-columns:minmax(0,44%) minmax(0,1fr);gap:12px}.rc.hero .rtitle{font-size:28px}.rtitle{font-size:18px}}
+</style>
+</head><body>
+<script src="/auth.js"></script>
+
+<canvas id="field" aria-label="Mosaic of titles. Drag to explore, scroll to zoom, click a title to check it."></canvas>
+<div id="veil"></div>
+<header class="top">
+ <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color:var(--acc)"><path d="M12 3l8.5 6.2-3.2 10H6.7L3.5 9.2z"/><path d="M12 8l4 2.9-1.5 4.6h-5L8 10.9z"/></svg><span>Taste <i>Radar</i></span></div>
+ <div class="seg" role="group" aria-label="What are you checking"><button id="tg">Games</button><button id="tm"><span class="lg">Movies &amp; shows</span><span class="sm">Movies</span></button></div>
+ <button class="ghost" id="tasteBtn">Your taste</button>
+ <button class="ghost" id="tf">Start fresh</button>
+</header>
+<aside id="dock" class="panel" hidden><div id="tastebox"></div></aside>
+<section id="intro" class="introbox" hidden></section>
+<main id="app" class="panel" hidden></main>
+<div class="hint" id="hint" hidden>Arrow keys move around the wall · Enter checks a title · Esc leaves the search box</div>
+<div id="ask" hidden></div>
+<section id="sheet" class="panel" aria-label="Verdict"><button class="close" id="closeSheet" aria-label="Close">
+ <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+ <div id="out"></div><div id="recs"></div></section>
+<div id="st" role="status"></div>
+
+<script>
+const CATS={game:["Gameplay / Mechanics","Story / Characters","Beauty","Sound / Music","Immersion / World"],movie:["Characters / Plot","Immersion","Sound / Music","Visuals","Genre trueness"]};
+// Starter titles: [name, year, ...consensus scores in category order]. Editorial estimates used only to learn your taste.
+const STARTERS={game:[["The Witcher 3",2015,9,10,9,9,10],["Minecraft",2011,9,5,6,7,9],["Elden Ring",2022,9,7,10,9,10],["Portal 2",2011,10,9,8,8,8],["Red Dead Redemption 2",2018,8,10,10,10,10],["Stardew Valley",2016,9,6,7,9,8],["The Last of Us",2013,8,10,9,10,9],["Fortnite",2017,8,3,7,7,6],["Hades",2020,10,8,9,10,8],["EA Sports FC / FIFA",2023,7,2,6,6,6],["Call of Duty: Modern Warfare",2019,8,6,8,8,8],["The Legend of Zelda: Breath of the Wild",2017,9,7,9,9,10],["Celeste",2018,10,8,8,10,8],["Mario Kart 8 Deluxe",2017,9,2,8,8,6],["Cyberpunk 2077",2020,7,8,9,8,9]],
+movie:[["The Dark Knight",2008,9.5,9,9,8.5,9],["Inception",2010,8.5,9.5,9.5,9.5,9],["The Godfather",1972,10,9.5,9.5,8,9.5],["Parasite",2019,9.5,9,8.5,8.5,9],["Avengers: Endgame",2019,8.5,8.5,8.5,8.5,9],["The Notebook",2004,7,8,8,7.5,8],["Mad Max: Fury Road",2015,7.5,9.5,9,10,9.5],["3 Idiots",2009,9,8.5,8.5,7.5,9],["Interstellar",2014,8.5,9.5,10,10,9],["Superbad",2007,8,7,7,6,9],["Spirited Away",2001,9,9.5,9.5,10,9],["The Conjuring",2013,7,8.5,8.5,7.5,8.5],["Titanic",1997,8,9,9,8.5,8.5],["Avatar",2009,6.5,9,8.5,10,8.5],["Dangal",2016,8.5,8,8,7.5,9]]};
+// Hidden demo profile (the builder’s own ratings)
+const SEED={game:[["Pokémon SoulSilver",6,9,9,9,8],["Pokémon Platinum",6,9,9,9,8],["Pokémon Black 2",7,7,7,8,7],["Pokémon Alpha Sapphire",6,6,6,8,7],["Resident Evil 2 (Remake)",9,8,7,8,8],["Resident Evil 3 (Remake)",8,7,7,8,7],["GTA IV",7,10,8,9,9],["GTA V",9,9,9,7,9],["Marvel’s Spider-Man",10,10,9,9,10],["Spider-Man: Miles Morales",10,8,10,10,8],["Marvel’s Spider-Man 2",10,10,10,10,9],["Red Dead Redemption",7,6,6,7,6],["Ghost of Tsushima",8,9,10,9,9],["Hollow Knight",10,10,10,10,9.5],["God of War (2018)",8,9,9,8,9],["The Last of Us Part I",8,9,10,10,9]],
+movie:[["Project Hail Mary",9.05,9.5,9,9.5,9],["Mr and Mrs Smith",6.9,6,6,6.5,6],["Resident Evil",7.8,8,7.5,9,9],["F1 The Movie",8.15,9,9,9,9],["Spiderman Brand New Day",8.25,9,9,8,9],["Welcome",8.3,8,8.5,8,7],["The Devil Wears Prada",8.42,9,7.5,8.5,8.5],["The Devil Wears Prada 2",7.25,7.5,7,8,8],["The Casino Royale",7.75,9,8,8,7.75],["Cruella",8.91,9,9,9.5,8.5],["Zindagi Na Milegi Doobara",8.91,9,9.5,9,9]]};
+// Extra titles with the same kind of scores as the starters, so rating one from the wall is instant.
+const POOL={game:[["Counter-Strike 2",2023,9,2,7.5,7.5,7],["GTA V",2013,9,8,9,8,9],["Valorant",2020,9,3,7,7,6],["PUBG: Battlegrounds",2017,8,2,6.5,7,7.5],["Dota 2",2013,9,4,7.5,8,7.5],["League of Legends",2009,9,5,7,8,7],["Apex Legends",2019,9,4,8,8,7],["Roblox",2006,7,2,5,5.5,6],["Baldur’s Gate 3",2023,9.5,9.5,8.5,9.5,9.5],["Call of Duty: Warzone",2020,8,3,8,8,7.5],["Rainbow Six Siege",2015,8.5,3,7.5,8,7.5],["Rocket League",2015,9,1,7,7.5,6],["Among Us",2018,8,2,5,5,6],["Overwatch 2",2022,8.5,5,8.5,8.5,7],["The Elder Scrolls V: Skyrim",2011,8.5,7.5,8.5,9.5,10],["Terraria",2011,9,4,7,8.5,9],["God of War (2018)",2018,9,9,9.5,9,9],["Marvel’s Spider-Man",2018,9,8,8.5,8.5,8.5],["Hogwarts Legacy",2023,7.5,7,9,8.5,9],["Forza Horizon 5",2021,9,3,9.5,9,9],["Black Myth: Wukong",2024,8.5,7,9.5,9,9],["Palworld",2024,8,3,7.5,7,8],["Helldivers 2",2024,9,4,8.5,9,8.5],["Fall Guys",2020,7.5,1,7.5,7.5,6],["Hollow Knight",2017,9.5,8,9,9.5,9.5],["Sekiro: Shadows Die Twice",2019,9.5,7.5,9,8.5,9],["Dark Souls III",2016,9.5,7,9,9.5,9.5],["Monster Hunter: World",2018,9,5,9,8.5,9],["Fallout 4",2015,8,7,7.5,8,9],["Resident Evil 4 (2023)",2023,9,7.5,9,9,9],["GTA: San Andreas",2004,9,8,6,9,9],["Half-Life 2",2004,9.5,8.5,8,8.5,9.5],["Team Fortress 2",2007,9,4,8,8.5,7.5],["Left 4 Dead 2",2009,9,4,7.5,8.5,8.5],["Garry’s Mod",2006,8,1,5,6,7],["Rust",2018,8,2,7.5,7.5,8.5],["Phasmophobia",2020,8,4,7,8.5,9],["Lethal Company",2023,8.5,3,6,8,8.5],["It Takes Two",2021,9.5,7.5,9,8.5,8.5],["Doom Eternal",2020,9.5,5,9,10,8.5],["God of War Ragnarök",2022,9,9,9.5,9,9],["Marvel’s Spider-Man 2",2023,9,8,9,8.5,8.5],["Ghost of Tsushima",2020,8.5,8,10,9,9],["Uncharted 4: A Thief’s End",2016,8.5,9,9.5,9,8.5],["Horizon Zero Dawn",2017,8.5,8,9.5,8.5,9],["Assassin’s Creed Valhalla",2020,7.5,7,8.5,8,8.5],["Assassin’s Creed II",2009,8.5,8.5,8,9,9],["Batman: Arkham Knight",2015,8.5,8,9.5,8.5,9],["Far Cry 5",2018,8,7,8.5,8.5,8.5],["Need for Speed: Most Wanted",2005,8.5,5,7.5,8.5,8],["Tekken 7",2015,8.5,5,8,8,7],["Mortal Kombat 11",2019,8.5,7,8.5,8,7.5],["Final Fantasy VII Remake",2020,8.5,8.5,9.5,10,9],["Persona 5 Royal",2020,9,9,9.5,10,9],["Undertale",2015,8,9.5,6,10,9],["Cuphead",2017,8.5,5,10,9.5,8],["The Sims 4",2014,7.5,3,7,7.5,8],["BioShock",2007,8.5,9.5,9,9,10],["Euro Truck Simulator 2",2012,8,1,7,7,8.5],["Genshin Impact",2020,7.5,6.5,9,9,8.5],["Warframe",2013,8,5,8,8,8],["Destiny 2",2017,8.5,5,9,9,8],["World of Warcraft",2004,8.5,7,7,8.5,9.5],["Marvel Rivals",2024,8.5,3,8.5,8,7],["Call of Duty: Black Ops 6",2024,8.5,6.5,8.5,8.5,8],["Battlefield 1",2016,8.5,6,9,9.5,9],["Honkai: Star Rail",2023,7.5,7,9,9,8],["Path of Exile",2013,8.5,5,7,7.5,8],["Diablo IV",2023,8,6.5,8.5,8.5,8],["Clair Obscur: Expedition 33",2025,9,9.5,9.5,10,9.5],["Kingdom Come: Deliverance II",2025,8.5,9,9,9,10],["Split Fiction",2025,9.5,7.5,9.5,8.5,8.5],["Hades II",2025,9.5,8,9.5,10,8.5],["Hollow Knight: Silksong",2025,9.5,7,9.5,9.5,9.5],["Monster Hunter Wilds",2025,8.5,5,9,8.5,8.5],["Alan Wake 2",2023,7.5,9,9.5,9,9.5],["Lies of P",2023,9,7.5,8.5,8.5,9],["Armored Core VI",2023,9,6,8.5,8.5,8],["Hi-Fi Rush",2023,9,6.5,9,10,8],["StarCraft II",2010,9.5,7,7.5,8.5,8],["Age of Empires II: Definitive Edition",2019,9,5,7,8,8],["Civilization VI",2016,9,3,8,9,8],["Cities: Skylines",2015,8.5,1,7.5,7.5,8.5],["Factorio",2020,9.5,2,6,7,9],["Satisfactory",2024,9,3,8.5,7.5,9],["Valheim",2021,8.5,3,8,8,9],["Subnautica",2018,8.5,7,9,8.5,10],["ARK: Survival Evolved",2017,7,3,7.5,7,8],["Dead by Daylight",2016,7.5,3,7,8,8],["Titanfall 2",2016,9.5,7.5,8.5,8.5,8.5],["Deep Rock Galactic",2020,9,3,7.5,8.5,8.5],["Vampire Survivors",2022,8.5,1,5,7.5,6],["Slay the Spire",2019,9.5,3,6,7.5,8],["Dead Cells",2018,9.5,4,8.5,8.5,8],["Portal",2007,9.5,8.5,7.5,8.5,8.5],["Mass Effect Legendary Edition",2021,8.5,9.5,8.5,9,9.5],["Star Wars Jedi: Survivor",2023,8.5,8,9,9,8.5],["Detroit: Become Human",2018,7,9,9,8.5,9],["Death Stranding",2019,7,8.5,9.5,9,9.5],["Mafia: Definitive Edition",2020,7.5,8.5,8.5,8.5,8.5],["Sleeping Dogs",2012,8,7.5,7.5,8,8],["Watch Dogs 2",2016,8,7,8,8,8.5],["Far Cry 3",2012,8.5,8,8,8.5,8.5],["Tomb Raider (2013)",2013,8.5,7.5,8.5,8,8.5],["Metro Exodus",2019,8,7.5,9,8.5,9.5],["Dying Light",2015,8.5,6,8,8,8.5],["Sea of Thieves",2018,8,5,9,8.5,8.5],["Grounded",2022,8,5,8,7.5,8.5],["Stray",2022,7.5,7,9,8.5,9],["Ori and the Will of the Wisps",2020,9,8,10,10,9],["Spider-Man: Miles Morales",2020,9,8,9.5,9,8.5],["Assassin’s Creed Odyssey",2018,8,7.5,9,8,9],["Assassin’s Creed IV: Black Flag",2013,8.5,8,8.5,9.5,9],["Naraka: Bladepoint",2021,8,3,8,7.5,7],["Football Manager 2024",2023,8.5,1,4,5,9],["F1 24",2024,8,3,8.5,8,8],["Assetto Corsa",2014,8.5,1,7,8,9],["Microsoft Flight Simulator",2020,7.5,1,10,8,10]],
+movie:[["RRR",2022,7.5,9,9,9.5,9],["Joker",2019,9,9,9.5,9,8.5],["Oppenheimer",2023,9,9,9.5,9,8.5],["12th Fail",2023,9,8.5,8,7.5,9],["Avengers: Infinity War",2018,8.5,8.5,8.5,9,9],["Spider-Man: Into the Spider-Verse",2018,9,9.5,9.5,10,9.5],["The Dark Knight Rises",2012,8.5,9,9.5,9,8.5],["K.G.F: Chapter 2",2022,6.5,8.5,8.5,8.5,8.5],["Baahubali 2: The Conclusion",2017,7.5,9,9,9,9],["Dune: Part Two",2024,8.5,10,9.5,10,9],["PK",2014,8,7.5,8,7.5,8],["Bajrangi Bhaijaan",2015,8.5,8,8.5,8,8.5],["Top Gun: Maverick",2022,8,9.5,9,9.5,9.5],["Whiplash",2014,9.5,9,10,8.5,9],["The Wolf of Wall Street",2013,8.5,8.5,8,8,8.5],["Django Unchained",2012,9,8.5,8.5,8.5,9],["Shutter Island",2010,9,9,8.5,8.5,9.5],["Zindagi Na Milegi Doobara",2011,8.5,8.5,9,9,8.5],["Andhadhun",2018,9,8.5,8.5,7.5,9.5],["Drishyam",2015,9,8.5,7.5,7,9],["Coco",2017,9,9,9.5,9.5,9],["Your Name",2016,8.5,9,9.5,10,9],["Inside Out",2015,9,8.5,8.5,9,9],["Spider-Man: Across the Spider-Verse",2023,9,9.5,9.5,10,9],["Kantara",2022,7.5,9,9,8.5,8.5],["Vikram",2022,7.5,8.5,9,8.5,9],["Jai Bhim",2021,9,8.5,8,7.5,9],["Chhichhore",2019,8.5,8,8,7.5,8.5],["Uri: The Surgical Strike",2019,7.5,8.5,8.5,8,9],["Shershaah",2021,8,8.5,9,8,8.5],["Gangs of Wasseypur",2012,9,9,9,8,9],["Tumbbad",2018,8,9.5,9,9.5,9.5],["Harry Potter and the Deathly Hallows – Part 2",2011,8.5,9,9,9,8.5],["Toy Story 3",2010,9,8.5,8.5,8.5,9],["Gone Girl",2014,9,8.5,8.5,8,9],["Prisoners",2013,9,9,8,8.5,9.5],["Logan",2017,9,8.5,8.5,8.5,9],["1917",2019,8,10,9,10,9],["Ford v Ferrari",2019,8.5,9,8.5,8.5,9],["Green Book",2018,9,8,8.5,7.5,8.5],["The Intouchables",2011,9,8,8.5,7.5,9],["The Grand Budapest Hotel",2014,8.5,9,8.5,10,8.5],["Hacksaw Ridge",2016,8.5,9,8.5,8.5,9],["How to Train Your Dragon",2010,8.5,9,10,9,9],["Klaus",2019,8.5,8.5,8.5,9.5,9],["Barfi!",2012,8.5,8.5,9.5,8.5,8.5],["Bhaag Milkha Bhaag",2013,8.5,8.5,9,8,8.5],["Queen",2013,8.5,8,8.5,7.5,8.5],["Kahaani",2012,8.5,8.5,8,7.5,9],["Article 15",2019,8.5,8.5,8,8,9],["Sardar Udham",2021,8.5,9,8.5,8.5,8.5],["Laapataa Ladies",2024,8.5,8,8,7.5,8.5],["K.G.F: Chapter 1",2018,7,8.5,8.5,8.5,8.5],["Soorarai Pottru",2020,8.5,8.5,9,8,8.5],["Kaithi",2019,8.5,9,8.5,8,9.5],["96",2018,8.5,8.5,10,8.5,9],["Vikram Vedha",2017,8.5,8.5,9,8,9],["Sita Ramam",2022,8.5,8.5,9.5,9,8.5],["Manjummel Boys",2024,8,9,8.5,8.5,9],["Maharaja",2024,9,8.5,8.5,8,9],["Kumbalangi Nights",2019,9,8.5,8.5,8.5,8.5],["Udaan",2010,9,8.5,8.5,7.5,8.5],["Paan Singh Tomar",2012,8.5,8.5,8,7.5,8.5],["Spider-Man: No Way Home",2021,8.5,8.5,8.5,8.5,9],["12 Years a Slave",2013,9,9,8.5,8.5,9],["Room",2015,9.5,9,7.5,7.5,9],["Spotlight",2015,9,8.5,7.5,7,9],["Incendies",2010,9.5,9,8,8,9],["A Separation",2011,9.5,9,6.5,7,9.5],["The Hunt",2012,9.5,9,7.5,8,9.5],["A Silent Voice",2016,9,8.5,8.5,9.5,9],["Demon Slayer: Mugen Train",2020,8,8.5,9.5,10,9],["Wolf Children",2012,9,8.5,9,9.5,9],["Hamilton",2020,9,9,10,8,9.5],["Rush",2013,8.5,9,8.5,9,9],["Warrior",2011,9,8.5,8.5,7.5,9.5],["Wild Tales",2014,8.5,8.5,8,8,9],["The Father",2020,9.5,9.5,8,8.5,9],["Rocketry: The Nambi Effect",2022,8.5,8,7.5,7.5,8.5],["Pink",2016,9,8.5,7.5,7,9],["Talvar",2015,9,8.5,7.5,7.5,9],["OMG: Oh My God!",2012,8.5,7.5,7.5,6.5,8.5],["Jersey",2019,9,8.5,8.5,7.5,9],["Mahanati",2018,9,9,9,9,8.5],["C/o Kancharapalem",2018,9,8.5,8.5,7.5,8.5],["Agent Sai Srinivasa Athreya",2019,8.5,8,7.5,7,9],["Ratsasan",2018,8.5,9,8.5,7.5,9.5],["Super Deluxe",2019,9,8.5,8.5,8.5,8.5],["Asuran",2019,8.5,9,9,8,9],["Pariyerum Perumal",2018,9,9,8.5,8,9],["Visaranai",2015,9,9,7.5,7.5,9.5],["Bangalore Days",2014,8.5,8.5,9,8,8.5],["Premam",2015,8.5,8.5,9.5,8.5,8.5],["Maheshinte Prathikaaram",2016,9,8.5,8.5,8,9],["Lucia",2013,8.5,8.5,8.5,7.5,9],["777 Charlie",2022,8.5,8.5,8.5,8,9],["Thithi",2015,8.5,8.5,7,7,9],["Natsamrat",2016,9,8.5,8,7.5,9],["Sairat",2016,8.5,8.5,10,8,8.5],["Amaran",2024,8.5,8.5,9,8.5,9],["Vada Chennai",2018,9,9,8.5,8.5,9.5],["Major",2022,8,8.5,8.5,8,8.5]]};
+// What the wall shows, most popular first (they fill the middle of the wall first).
+// Games: PC games only. Movies: released 2010 or later and rated 8.0 or higher on IMDb.
+const WALL={game:["Counter-Strike 2","GTA V","Minecraft","Valorant","Fortnite","PUBG: Battlegrounds","Dota 2","League of Legends","Apex Legends","Red Dead Redemption 2","Elden Ring","Cyberpunk 2077","The Witcher 3","Roblox","Genshin Impact","Warframe","Destiny 2","World of Warcraft","Marvel Rivals","Call of Duty: Black Ops 6","Battlefield 1","Clair Obscur: Expedition 33","Hades II","Hollow Knight: Silksong","Baldur’s Gate 3","Call of Duty: Warzone","Call of Duty: Modern Warfare","Rainbow Six Siege","Rocket League","Among Us","Overwatch 2","The Elder Scrolls V: Skyrim","Terraria","Stardew Valley","God of War (2018)","Marvel’s Spider-Man","Hogwarts Legacy","Forza Horizon 5","Black Myth: Wukong","Palworld","Helldivers 2","Fall Guys","EA Sports FC / FIFA","The Last of Us","Hollow Knight","Hades","Sekiro: Shadows Die Twice","Dark Souls III","Monster Hunter: World","Fallout 4","Resident Evil 4 (2023)","Portal 2","GTA: San Andreas","Half-Life 2","Team Fortress 2","Left 4 Dead 2","Garry’s Mod","Rust","Phasmophobia","Lethal Company","It Takes Two","Doom Eternal","God of War Ragnarök","Marvel’s Spider-Man 2","Ghost of Tsushima","Uncharted 4: A Thief’s End","Horizon Zero Dawn","Assassin’s Creed Valhalla","Assassin’s Creed II","Batman: Arkham Knight","Far Cry 5","Need for Speed: Most Wanted","Tekken 7","Mortal Kombat 11","Final Fantasy VII Remake","Persona 5 Royal","Celeste","Undertale","Cuphead","The Sims 4","BioShock","Euro Truck Simulator 2","Honkai: Star Rail","Path of Exile","Diablo IV","Kingdom Come: Deliverance II","Split Fiction","Monster Hunter Wilds","Alan Wake 2","Lies of P","Armored Core VI","Hi-Fi Rush","StarCraft II","Age of Empires II: Definitive Edition","Civilization VI","Cities: Skylines","Factorio","Satisfactory","Valheim","Subnautica","ARK: Survival Evolved","Dead by Daylight","Titanfall 2","Deep Rock Galactic","Vampire Survivors","Slay the Spire","Dead Cells","Portal","Mass Effect Legendary Edition","Star Wars Jedi: Survivor","Detroit: Become Human","Death Stranding","Mafia: Definitive Edition","Sleeping Dogs","Watch Dogs 2","Far Cry 3","Tomb Raider (2013)","Metro Exodus","Dying Light","Sea of Thieves","Grounded","Stray","Ori and the Will of the Wisps","Spider-Man: Miles Morales","Assassin’s Creed Odyssey","Assassin’s Creed IV: Black Flag","Naraka: Bladepoint","Football Manager 2024","F1 24","Assetto Corsa","Microsoft Flight Simulator"],
+movie:["Interstellar", "Inception", "Avengers: Endgame", "Joker", "Oppenheimer", "12th Fail", "Dangal", "Avengers: Infinity War", "Spider-Man: Into the Spider-Verse", "Parasite", "The Dark Knight Rises", "K.G.F: Chapter 2", "Spider-Man: No Way Home", "Pink", "Demon Slayer: Mugen Train", "Baahubali 2: The Conclusion", "RRR", "Dune: Part Two", "PK", "Bajrangi Bhaijaan", "Top Gun: Maverick", "Whiplash", "The Wolf of Wall Street", "Django Unchained", "Shutter Island", "Zindagi Na Milegi Doobara", "Andhadhun", "Drishyam", "Coco", "Your Name", "Inside Out", "Spider-Man: Across the Spider-Verse", "Mad Max: Fury Road", "Kantara", "Jai Bhim", "Chhichhore", "Uri: The Surgical Strike", "Shershaah", "Gangs of Wasseypur", "Tumbbad", "Harry Potter and the Deathly Hallows – Part 2", "Toy Story 3", "Gone Girl", "Prisoners", "Logan", "1917", "Ford v Ferrari", "Green Book", "The Intouchables", "The Grand Budapest Hotel", "Hacksaw Ridge", "How to Train Your Dragon", "Klaus", "Barfi!", "Bhaag Milkha Bhaag", "Queen", "Kahaani", "Laapataa Ladies", "K.G.F: Chapter 1", "12 Years a Slave", "Room", "Spotlight", "Incendies", "A Separation", "The Hunt", "A Silent Voice", "Wolf Children", "Hamilton", "Rush", "Warrior", "Wild Tales", "The Father", "OMG: Oh My God!"]};
+const LV={loved:9.5,liked:7.5,meh:5.5,disliked:3},LBL={loved:"Loved",liked:"Liked",meh:"Meh",disliked:"Disliked"};
+const IC={
+crown:'<path d="M3 18h18M4 18L3 7l5 4 4-7 4 7 5-4-1 11"/>',
+sword:'<path d="M12 2l2 3v11h-4V5zM7 16h10M12 16v4M9.5 21h5"/>',
+coin:'<circle cx="12" cy="12" r="8"/><path d="M8.5 12h7"/>',
+cshield:'<path d="M12 3l8 3v6c0 5-4 8-8 9-4-1-8-4-8-9V6z"/><path d="M12 3l-2 5 3 3-3 4 2 6"/>',
+star:'<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
+clapper:'<path d="M4 9h16v11H4zM4 9l2-5h4M10 9l2-5h4M16 9l2-5h2"/>',
+strip:'<path d="M4 5h16v14H4zM4 9h2M4 13h2M4 17h2M18 9h2M18 13h2M18 17h2M9 5v14M15 5v14"/>',
+sadmask:'<path d="M5 4h14v8a7 7 0 0 1-14 0z"/><path d="M9 9v1.5M15 9v1.5M9 16c1.3-1.6 4.7-1.6 6 0"/>',
+swords:'<path d="M5 4l12 12M19 4L7 16M13 16l4-4M7 12l4 4M17 16l3 3M7 16l-3 3"/>',
+scroll:'<path d="M6 4h12v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2zM9 9h6M9 13h6M9 17h4"/>',
+crystal:'<path d="M12 2l7 7-7 13-7-13zM5 9h14M12 2L9 9l3 13 3-13-3-13"/>',
+horn:'<path d="M4 10v4l3 .5L17 19V5L7 9.5zM20 9a4 4 0 0 1 0 6M7 14.5L8 19h2l-1-4"/>',
+compass:'<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/>',
+reel:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="6.5" r="1.4"/><circle cx="12" cy="17.5" r="1.4"/><circle cx="6.5" cy="12" r="1.4"/><circle cx="17.5" cy="12" r="1.4"/>',
+lens:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><path d="M12 3v4.5M18.4 7.2l-3.9 2.2M18.4 16.8l-3.9-2.2M12 21v-4.5M5.6 16.8l3.9-2.2M5.6 7.2l3.9 2.2"/>',
+target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/>',
+sadgame:'<path d="M12 3c-4 0-7 3-7 7v10h14V10c0-4-3-7-7-7z"/><path d="M8.5 11c0-1.8 1.5-3 3.5-3s3.5 1.2 3.5 3v2.5c0 1.8-1.5 3-3.5 3s-3.5-1.2-3.5-3z"/><circle cx="10.3" cy="11.8" r=".5"/><circle cx="13.7" cy="11.8" r=".5"/><path d="M10.6 14.7c.8-.7 2-.7 2.8 0M14.8 13c.3.7.3 1.2 0 1.7"/>',
+sadmovie:'<circle cx="12" cy="12" r="9"/><path d="M6.5 10c.5-3 3-4.5 5.5-4.5s5 1.5 5.5 4.5"/><circle cx="9.3" cy="12" r=".6"/><circle cx="14.7" cy="12" r=".6"/><path d="M9.2 16.2c1.5-1.4 4.1-1.4 5.6 0M15.6 13.5c.4.9.4 1.5 0 2.1"/>',
+spark:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18"/>'};
+const RI={game:{loved:"crown",liked:"sword",meh:"coin",disliked:"cshield"},movie:{loved:"star",liked:"clapper",meh:"strip",disliked:"sadmask"}};
+const rlev=r=>r>=8.5?"loved":r>=6.5?"liked":r>=4.5?"meh":"disliked";
+const ic=(n,z)=>{const e=document.createElement("span");e.className="ic";e.innerHTML='<svg width="'+(z||20)+'" height="'+(z||20)+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+(IC[n]||"")+"</svg>";return e};
+const rface=r=>ic(RI[S.type][rlev(r)],16);
+const rbtn=(l,cls)=>{const b=document.createElement("button");b.className="btn "+(cls||"");b.append(ic(RI[S.type][l],18),document.createTextNode(LBL[l]));return b};
+const RANK={low:0,medium:1,high:2};
+const $=s=>document.querySelector(s);
+const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
+const store={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const avg=a=>{const v=a.filter(x=>x!=null);return v.length?v.reduce((p,c)=>p+c,0)/v.length:null};
+const clamp=x=>Math.max(0,Math.min(10,+x||0));
+const VER="5";
+const wipe=()=>{try{Object.keys(localStorage).filter(k=>k.startsWith("tr")).forEach(k=>localStorage.removeItem(k));localStorage.setItem("tr_ver",VER)}catch(e){}};
+try{if(localStorage.getItem("tr_ver")!==VER)wipe()}catch(e){}
+const DEF=()=>({type:"game",demo:false,taps:{game:{},movie:{}},done:{},extra:{game:[],movie:[]},slots:{game:[],movie:[]},skip:{game:[],movie:[]},dyn:{game:[],movie:[]},why:{game:{},movie:{}}});
+let S=Object.assign(DEF(),store.get("tr4")||{});
+const save=()=>store.set("tr4",S);
+const allS=t=>STARTERS[t].concat(POOL[t],S.dyn[t]||[]);
+const label=r=>r>=8.5?"loved":r>=6.5?"liked":r>=4.5?"found it meh":"disliked";
+
+function prof(t){
+ if(S.demo)return SEED[t].map(r=>({n:r[0],s:r.slice(1),r:avg(r.slice(1))}));
+ const st=Object.fromEntries(allS(t).map(r=>[r[0],r.slice(2)]));
+ return Object.entries(S.taps[t]).filter(([n])=>st[n]).map(([n,l])=>({n,s:st[n],r:LV[l],y:(S.why[t]||{})[n]||[]})).concat(S.extra[t]||[]);
+}
+function corr(a,b){const ma=avg(a),mb=avg(b);let c=0,x=0,y=0;a.forEach((v,i)=>{c+=(v-ma)*(b[i]-mb);x+=(v-ma)**2;y+=(b[i]-mb)**2});return x&&y?c/Math.sqrt(x*y):0}
+// What each category is worth to this person. Learned from their ratings; in detailed mode it is
+// blended half-and-half with what they told us directly in the this-or-that picks.
+const prefsOf=()=>{const P=S.prefs&&S.prefs[S.type];return P&&P.done?P:null};
+function weights(it){const n=CATS[S.type].length,m=k=>Math.min(1.2,0.3*it.filter(i=>(i.y||[]).includes(k)).length);
+ const w=it.length<4?Array.from({length:n},(_,k)=>1+m(k)):CATS[S.type].map((_,k)=>0.15+Math.max(0,corr(it.map(i=>i.s[k]),it.map(i=>i.r)))+m(k));
+ const P=prefsOf();if(!P||!P.wins)return w;
+ return w.map((x,k)=>0.5*x+0.5*(0.3+1.4*P.wins[k]/(n-1)))}
+function fit(v,it){
+ const w=weights(it),ws=w.reduce((a,b)=>a+b,0);
+ const nb=it.map(i=>({i,d:v.reduce((s,x,k)=>s+w[k]*Math.abs(x-i.s[k]),0)/ws})).sort((a,b)=>a.d-b.d);
+ // nothing rated yet: weigh its scores by what they told us matters, and stay modest about it
+ if(!nb.length)return{pred:5.5+(v.reduce((s,x,k)=>s+w[k]*x,0)/ws-5.5)*.7,nb,w};
+ const top=nb.slice(0,5),ww=top.map(x=>1/(0.25+x.d*x.d));
+ let knn=top.reduce((s,x,k)=>s+ww[k]*x.i.r,0)/ww.reduce((a,b)=>a+b,0);
+ // only loved titles to go on (common after the deep dive): distance from them has to do the work
+ if(!it.some(i=>i.r<6))knn-=1.1*Math.max(0,nb[0].d-0.5);
+ let pred=0.75*knn+0.25*avg(v);
+ // a dealbreaker they named: a weak score there pulls the match down
+ const P=prefsOf();if(P){const ds=P.deals||(P.deal>=0?[P.deal]:[]);pred=Math.max(0,pred-Math.min(2.5,ds.reduce((s,k)=>s+(v[k]<6.5?(6.5-v[k])*0.5:0),0)))}
+ return{pred,nb,w};
+}
+const verdict=p=>p>=7.8?"Strong yes: you’ll probably love this.":p>=6.5?"Likely yes: it fits what you enjoy.":p>=5?"Maybe: some of it will click, some won’t.":"Probably skip: it’s unlike what you enjoy.";
+
+// ---------- layout helpers (visual only) ----------
+const wide=()=>innerWidth>=900;
+const openSheet=()=>{document.body.classList.add("sheet-open");document.body.classList.remove("taste-open")};
+const closeSheet=()=>{document.body.classList.remove("sheet-open");MZ.focus(null)};
+$("#closeSheet").onclick=closeSheet;
+$("#tasteBtn").onclick=()=>{document.body.classList.toggle("taste-open");document.body.classList.remove("sheet-open")};
+let HOT=null; // title currently being checked, highlighted in the mosaic
+
+function setType(t){S.type=t;save();HOT=null;render()}
+$("#tf").onclick=()=>{wipe();S=DEF();REC=[];HOT=null;render()};
+$("#tg").onclick=()=>setType("game");$("#tm").onclick=()=>setType("movie");
+function render(){$("#tg").className=S.type==="game"?"on":"";$("#tm").className=S.type==="movie"?"on":"";$("#st").textContent="";
+ document.body.classList.remove("sheet-open","taste-open");$("#out").replaceChildren();$("#recs").replaceChildren();
+ if(!S.depth){if(S.done.game||S.done.movie||S.demo){S.depth="quick";save()}else{intro();syncMosaic();return}}
+ (S.done[S.type]||S.demo)?main():calib();syncMosaic()}
+
+// ---------- Opening: "Moshi Moshi" in front of a shattered sheet of glass (WebGL2, no libraries) ----------
+// One click, tap or key: the glass breaks from that point into thousands of pieces that swirl into a
+// deep cloud that only lines up from one point of view: "welcome to / TASTE RADAR", then the question page.
+const RMO=matchMedia("(prefers-reduced-motion: reduce)").matches;
+function intro(){
+ document.body.classList.add("intro","calib","opening");$("#dock").hidden=true;$("#ask").hidden=true;$("#hint").hidden=true;$("#app").hidden=true;
+ const ov=$("#intro");ov.hidden=false;ov.replaceChildren(choose()); // the question page waits underneath, hidden
+ moshi();
+}
+const revealQuestion=()=>document.body.classList.remove("opening");
+
+function moshi(opts){const ACT=!!(opts&&opts.act2);
+ const gnow=()=>window.__glassNow??performance.now(); // a test can pin the animation time; visitors use the real clock
+ const words=el("div",null,"moshi");words.append(el("span","Moshi Moshi"));words.setAttribute("aria-hidden","true");
+ const cv=document.createElement("canvas");cv.id="glass";cv.tabIndex=0;cv.setAttribute("role","button");cv.setAttribute("aria-label","Moshi Moshi. Click or press any key to continue.");
+ const gl=cv.getContext("webgl2",{antialias:false,alpha:true,premultipliedAlpha:true});
+ let started=false;
+ if(!gl&&ACT){opts.fallback();return}
+ if(!gl){ // no WebGL: a still, dark version with the same words
+  const bg=el("div",null,"moshibg");document.body.append(bg,words);
+  const go=()=>{if(started)return;started=true;removeEventListener("keydown",key);bg.style.opacity=words.style.opacity="0";revealQuestion();setTimeout(()=>{bg.remove();words.remove()},500)};
+  const key=e=>{if(e.key!=="Tab"){e.preventDefault();go()}};bg.addEventListener("pointerdown",go);addEventListener("keydown",key);return}
+ if(ACT)document.body.append(cv);else document.body.append(cv,words);
+ const ov=document.createElement("canvas");ov.style.cssText="position:fixed;left:0;top:0;z-index:32;pointer-events:none";let octx=null;if(!ACT){document.body.append(ov);octx=ov.getContext("2d")}
+
+ // ---- tiny matrix helpers (column-major) ----
+ const M={id:()=>new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]),
+  mul(a,b){const o=new Float32Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s}return o},
+  tr(x,y,z){const m=M.id();m[12]=x;m[13]=y;m[14]=z;return m},sc(s){const m=M.id();m[0]=m[5]=m[10]=s;return m},
+  rx(a){const c=Math.cos(a),s=Math.sin(a),m=M.id();m[5]=c;m[6]=s;m[9]=-s;m[10]=c;return m},
+  ry(a){const c=Math.cos(a),s=Math.sin(a),m=M.id();m[0]=c;m[2]=-s;m[8]=s;m[10]=c;return m},
+  rz(a){const c=Math.cos(a),s=Math.sin(a),m=M.id();m[0]=c;m[1]=s;m[4]=-s;m[5]=c;return m},
+  axis(x,y,z,a){const l=Math.hypot(x,y,z)||1;x/=l;y/=l;z/=l;const c=Math.cos(a),s=Math.sin(a),t=1-c;
+   return new Float32Array([t*x*x+c,t*x*y+s*z,t*x*z-s*y,0, t*x*y-s*z,t*y*y+c,t*y*z+s*x,0, t*x*z+s*y,t*y*z-s*x,t*z*z+c,0, 0,0,0,1])},
+  persp(fov,asp,n,f){const t=1/Math.tan(fov/2),m=new Float32Array(16);m[0]=t/asp;m[5]=t;m[10]=(f+n)/(n-f);m[11]=-1;m[14]=2*f*n/(n-f);return m}};
+
+ // ---- dark smoked glass: studio reflections and a clearcoat; no rainbow sheen ----
+ // Two kinds of geometry share it: the big resting pieces (mode 0, placed by uModel) and the
+ // thousands of small shards (mode 1), which the vertex shader animates from the clock alone.
+ const VS=`#version 300 es
+ layout(location=0) in vec3 aP;layout(location=1) in vec3 aN;layout(location=2) in vec2 aC;layout(location=3) in vec4 aR;layout(location=4) in vec4 aT;layout(location=5) in vec4 aW;
+ uniform mat4 uModel,uVP,uG;uniform int uMode;uniform float uT,uSpeed,uZ0,uCamZ;uniform vec2 uHit;
+ uniform vec4 uP;   // first chapter: when the pieces start to come together, how long the sweep takes, flight time, settle time
+ uniform float uStart,uImp,uStory;uniform vec4 uBeam;uniform vec2 uPalm;uniform vec2 uPath[128];uniform vec4 uS,uR; // the character's flight, sampled every 40 ms
+  // act two starts from the question page; the second blast can be a beam or a rush at the camera
+ uniform vec4 uQ;   // second chapter: when the welcome blows apart, when the pieces start to come together, screen width
+ out vec3 vW,vN;out vec2 vRest,vLoc;out float vGlow,vLand,vRole,vTile,vFlash,vSeed;
+ mat3 axang(vec3 a,float g){a=normalize(a);float c=cos(g),s=sin(g),t=1.-c;
+  return mat3(t*a.x*a.x+c,t*a.x*a.y+s*a.z,t*a.x*a.z-s*a.y, t*a.x*a.y-s*a.z,t*a.y*a.y+c,t*a.y*a.z+s*a.x, t*a.x*a.z+s*a.y,t*a.y*a.z-s*a.x,t*a.z*a.z+c);}
+ float eo(float u){return 1.-pow(1.-u,3.);}
+ float eio(float u){return u<.5?4.*u*u*u:1.-pow(-2.*u+2.,3.)/2.;}
+ // A point on the ray from the front camera through p: from anywhere else it is one more shard in a deep
+ // cloud; from the front it lands exactly on p.
+ vec3 onRay(vec2 p,float f){return vec3(p*f,uCamZ*(1.-f));}
+ // The blast: every piece is thrown out from the hit point, fast at first and then hanging in the air,
+ // some of them straight at the camera.
+ vec2 pathAt(float g){float f=clamp(g/50.,0.,126.9),i=floor(f);int k=int(i);return mix(uPath[k],uPath[k+1],f-i);}
+ vec3 blast(vec2 dir,float tau,vec4 R,out float fade,vec3 prm){
+  float td=mix(230.,470.,R.y),sp=mix(.28,2.1,R.z*R.z)*prm.x,g=(1.-exp(-tau/td))*td+tau*.03;fade=exp(-tau/td);
+  vec2 dd=normalize(dir+(R.yw-.5)*prm.z);float vz=clamp((R.x-.5)*3.4,-1.5,1.5)+prm.y;
+  vec3 o=vec3(dd*sp*(.55+.9*R.w)*g,vz*sp*g);o.z=min(o.z,uCamZ*.7);return o;}
+ void main(){vLand=0.;vRole=0.;vTile=0.;vFlash=0.;vSeed=aR.x;vLoc=aP.xy;
+  if(uMode==0){vec4 w=uModel*vec4(aP,1.);vW=w.xyz;vN=mat3(uModel)*aN;vRest=w.xy;vGlow=0.;gl_Position=uVP*w;return;}
+  float t=uT,d=length(aC-uHit),tb=uImp+d/uSpeed;vRest=aC;
+  if(t<tb&&uStart<.5){vW=vec3(0.);vN=vec3(0.,0.,1.);vGlow=0.;gl_Position=vec4(2.,2.,2.,1.);return;} // still part of the big piece
+  // some pieces are dust, a few are heavy chunks, most are in between; dust arrives last
+  float u=fract(aR.x*11.7+aR.w*4.9);
+  float fsz=u<.22?mix(.28,.6,u/.22):(u>.93?mix(1.9,2.7,(u-.93)/.07):mix(.8,1.45,(u-.22)/.71)),late=u<.22?.12:0.;
+  // 1 · the glass blows apart
+  float tau=max(0.,t-tb),fd;
+  vec2 dir=d>.5?(aC-uHit)/d:vec2(cos(aR.w*6.283),sin(aR.w*6.283));
+  vec3 bl=blast(dir,tau,aR,fd,vec3(1.,0.,.5)),T=vec3(aC,uZ0)+bl,bd=normalize(bl+vec3(0.,0.,.001));
+  // the broken pieces chase the character as he flies, trailing behind him in a stream
+  float wf=uStory*eo(clamp((t-tb-260.)/340.,0.,1.)),lag=60.+1000.*aR.x;
+  T=mix(T,vec3(pathAt(t-lag)+vec2(cos(aR.y*6.283),sin(aR.y*6.283))*(2.+20.*aR.z*aR.z),(aR.w-.5)*30.),wf);
+  // 2 · the pieces come back together, a sweep from the right, and only from the front do they make "welcome to / TASTE RADAR"
+  float dly=uP.y*clamp(.5-aW.x/uQ.z+(aR.z-.5)*.16+late,0.,1.);
+  float sa=clamp((t-uP.x-dly)/uP.z,0.,1.),ea=eio(sa),bow=sin(3.1416*sa);
+  float fA=mix(.38,2.3,fract(aR.x*7.13+aR.z*3.1));
+  vec3 rayA=onRay(aW.xy,fA),chA=normalize(rayA-T+vec3(0.,0.,.001));
+  T=mix(T,rayA,ea)+vec3(-dir.y,dir.x,0.)*bow*(120.+260.*aR.y)+vec3(0.,0.,bow*(aR.z-.5)*500.);
+  float lk=clamp((t-uP.x-dly-uP.z)/uP.w,0.,1.),cA=eo(lk);
+  T=mix(T,vec3(aW.xy,uZ0+(aW.w>2.5?3.:(aW.w>.5&&aW.w<1.5?2.:(aW.w>1.5?0.:1.)))*1.3),cA);T.z+=sin(t*.004+aW.x*.03+aW.y*.02)*1.5*cA; // the letters breathe a little
+  float sz=mix(mix(1.,fsz,eo(clamp(tau/200.,0.,1.))),1.,ea);
+  float sc0=uStart>.5?aT.z:1.,l0=uStart>.5?1.:0.;
+  float sc=mix(mix(sc0,aW.z*fA,ea),aW.z,cA)*sz;
+  float ang=(aR.x-.5)*16.*(1.-exp(-tau/330.))*(1.-ea)+bow*(aR.y-.5)*5.;
+  float wA=smoothstep(0.,.25,sa);
+  vec3 sd=normalize(mix(bd,chA,wA));float k=mix((1.6+3.4*aR.y)*fd,2.2*bow,wA)*(1.-cA)*step(tb,t);
+  float tile=smoothstep(.05,.5,sa),flash=sin(3.1416*lk);
+  // 3 · the welcome blows apart the same way and comes back together as the question page
+  float u1b=0.,cB=0.;vec4 R2=aR.wzxy;
+  if(uStory<.5){
+  bool beamOn=uBeam.w>.5&&uBeam.w<1.5,far=uBeam.w>2.5&&aW.w>2.5;float d2=length(aW.xy-uPalm),tb2=uQ.x+d2/(uSpeed*(beamOn?.5:1.)),tau2=max(0.,t-tb2),fd2;
+  vec2 dir2=beamOn?normalize(uBeam.xy):(d2>.5?(aW.xy-uPalm)/d2:vec2(cos(aR.z*6.283),sin(aR.z*6.283)));
+  vec3 bl2=blast(dir2,tau2,R2,fd2,vec3(far?2.6:(beamOn?2.4:(uBeam.w>1.5&&uBeam.w<2.5?1.5:1.)),uBeam.z,(far||beamOn)?.12:.5)),bd2;T+=bl2;bd2=normalize(bl2+vec3(0.,0.,.001));
+  u1b=eo(clamp(tau2/280.,0.,1.));
+  float dly2=uP.y*clamp(.5-aT.x/uQ.z+(aR.y-.5)*.16+late,0.,1.);
+  float sb=clamp((t-uQ.y-dly2)/uP.z,0.,1.),eb=eio(sb),bow2=sin(3.1416*sb);
+  float fB=mix(.38,2.3,fract(aR.y*5.7+aR.w*2.3));
+  vec3 rayB=onRay(aT.xy,fB),chB=normalize(rayB-T+vec3(0.,0.,.001)),flatB=vec3(aT.xy,uZ0+(2.-aT.w)*.8+aR.w*.5);
+  T=mix(T,rayB,eb)+vec3(dir2.y,-dir2.x,0.)*bow2*(120.+260.*aR.x)+vec3(0.,0.,bow2*(aR.y-.5)*500.);
+  float lk2=clamp((t-uQ.y-dly2-uP.z)/uP.w,0.,1.);cB=eo(lk2);
+  T=mix(T,flatB,cB);
+  float sz2=mix(mix(1.,fsz,eo(clamp(tau2/200.,0.,1.))),1.,eb);
+  sc=mix(mix(sc,aT.z*fB,eb),aT.z,cB)*sz2;
+  ang+=(R2.x-.5)*16.*(1.-exp(-tau2/330.))*(1.-eb)+bow2*(aR.w-.5)*5.;
+  if(t>=tb2){float wB=smoothstep(0.,.25,sb);sd=normalize(mix(bd2,chB,wB));k=mix((1.6+3.4*R2.y)*fd2*(1.+.9*((far||beamOn||(uBeam.w>1.5&&uBeam.w<2.5))?1.:0.)),2.2*bow2,wB)*(1.-cB);tile=smoothstep(.05,.5,sb);flash=sin(3.1416*lk2);}
+  }
+  else{
+   float B1=uS.x,B2=uS.y,G=uS.z,F=uS.w,Hh=uQ.w,Tg=450.;
+   bool gB=aW.w>2.5||aW.y>uR.z;
+   vec2 src=gB?uR.xy:uPalm;float dS=length(aW.xy-src);
+   float tbS=gB?B2+dS/1.2:B1+dS/uSpeed,tt=min(t,G),tauS=max(0.,tt-tbS),fdS;
+   vec2 dirS=dS>.5?(aW.xy-src)/dS:vec2(cos(aR.z*6.283),sin(aR.z*6.283));
+   if(gB)dirS=normalize(dirS+vec2(0.,.55));
+   vec3 blS=blast(dirS,tauS,R2,fdS,vec3(gB?2.1:1.,gB?.5:0.,gB?.22:.5)),bdS=normalize(blS+vec3(0.,0.,.001));
+   vec3 Th=T+blS+vec3(sin(tt*.0016+aR.x*40.),cos(tt*.0013+aR.y*40.),0.)*4.*step(tbS,tt);
+   float scH=sc*mix(1.,fsz,eo(clamp(tauS/200.,0.,1.))),angH=ang+(R2.x-.5)*16.*(1.-exp(-tauS/330.));
+   vec3 Tq=Th;float scq=scH,angq=angH,kq=0.,cBq=0.;vec3 sdq=bdS;
+   if(t>=tbS&&t<=G)kq=(1.6+3.4*R2.y)*fdS*(gB?1.9:1.);
+   if(t>G){
+    float vt=1.8*(.8+.45*fract(aR.z*7.3+aR.x*3.1)),ps0=clamp((uCamZ-Th.z)/uCamZ,.5,1.6),top=.75*Hh*ps0,bot=-top,span=2.*top;
+    float tg=t-G,fy=vt*(tg-Tg*(1.-exp(-tg/Tg))),s0=Th.y-bot;
+    float tgF=F-G,fyF=vt*(tgF-Tg*(1.-exp(-tgF/Tg))),cF=mod(s0-fyF,span),tE=F+cF/vt,spin=(R2.y-.5)*.0025,kf=2.6*(vt/1.8)*(1.-exp(-tg/Tg));
+    sdq=normalize(mix(bdS,vec3(0.,-1.,0.),smoothstep(0.,250.,tg)));
+    if(t<tE){Tq=vec3(Th.x,bot+mod(s0-fy,span),Th.z);angq=angH+spin*tg;kq=kf;}
+    else{
+     float topP=.75*Hh,D=topP-aT.y,pw=2.4,dur=pw*D*ps0/vt,u=clamp((t-tE)/dur,0.,1.),ss=smoothstep(0.,1.,u);
+     float fB2=mix(.38,2.3,fract(aR.y*5.7+aR.w*2.3)),zt=mix(Th.z,uCamZ*(1.-fB2),ss),ps=(uCamZ-zt)/uCamZ;
+     float Yp=aT.y+D*pow(1.-u,pw),Xp=mix(Th.x/ps0,aT.x,ss)+sin(3.1416*u)*(R2.z-.5)*90.;
+     cBq=smoothstep(.62,1.,u);
+     Tq=mix(vec3(Xp*ps,Yp*ps,zt),vec3(aT.xy,uZ0+(2.-aT.w)*.8+aR.w*.5),cBq);
+     angq=(angH+spin*(tE-G))*(1.-ss);scq=mix(mix(scH,aT.z*fB2,ss),aT.z,cBq);kq=kf*pow(1.-u,1.4);sdq=vec3(0.,-1.,0.);}}
+   T=Tq;sc=scq;ang=angq;sd=sdq;k=kq;u1b=eo(clamp(tauS/280.,0.,1.));cB=cBq;
+   flash=max(cBq>0.?sin(3.1416*cBq):0.,gB&&t>=tbS&&t<G?exp(-tauS/110.):0.);}
+  mat3 Rm=axang(aR.yzw-.5+vec3(0.,0.,.001),ang);
+  vec3 lp=Rm*(aP*sc);lp+=sd*dot(lp,sd)*k; // while it flies, a piece is stretched along its path
+  float u1a=eo(clamp(tau/280.,0.,1.)),landA=max(cA,l0*(1.-u1a));vLand=landA*(1.-u1b)+cB;vRole=u1b>.5?aT.w:((l0>.5&&cA<.5)?aT.w:aW.w);vGlow=1.-vLand;vTile=clamp(k*.07+(fsz<.65?.4:0.)+flash*.35,0.,1.)*(1.-vLand);vFlash=flash;
+  vec4 w=uG*vec4(T+lp,1.);vW=w.xyz;vN=mat3(uG)*(Rm*aN);gl_Position=uVP*w;}`;
+ const FS=`#version 300 es
+ precision highp float;precision highp int;in vec3 vW,vN;in vec2 vRest,vLoc;in float vGlow,vLand,vRole,vTile,vFlash,vSeed;out vec4 o;uniform vec3 uCam;uniform float uEnv,uWaveR,uLite;uniform int uMode;uniform vec2 uHit;
+ const vec3 KEY=normalize(vec3(-.55,.62,.58));
+ vec3 env(vec3 r,float ro){vec3 c=vec3(.010,.011,.014);
+  c+=vec3(.92,.95,1.)*1.55*smoothstep(.62-ro*.55,.97,dot(r,KEY));
+  c+=vec3(.82,.86,.94)*.55*(1.-smoothstep(0.,.2+ro*.3,abs(r.x-.72)))*smoothstep(-.3,.5,r.y)*step(0.,r.z);
+  c+=vec3(.05,.055,.065)*smoothstep(-.3,.9,r.y);c+=vec3(.02,.02,.024)*(1.-smoothstep(-.8,.2,r.y));return c;}
+ float hsh(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
+ // the weathered tiles of the second picture: dark teal, rust and cream, with a worn, patchy surface
+ float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hsh(i),hsh(i+vec2(1.,0.)),f.x),mix(hsh(i+vec2(0.,1.)),hsh(i+vec2(1.,1.)),f.x),f.y);}
+ vec3 tileCol(float s,vec2 p){float u=fract(s*91.7);
+  vec3 c=u<.44?vec3(.018,.080,.090):(u<.62?vec3(.20,.068,.024):(u<.80?vec3(.46,.37,.23):vec3(.012,.016,.019)));
+  float n=vn(p*.13+s*40.),m=vn(p*.31+s*17.);
+  c=mix(c,vec3(.24,.085,.03),smoothstep(.55,.8,n)*(u<.44?.8:.3));c=mix(c,vec3(.40,.32,.20),smoothstep(.62,.85,m)*.45);return c;}
+ vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}
+ void main(){
+  if(uMode==0&&uWaveR>0.&&length(vRest-uHit)<uWaveR)discard; // the small shards have taken over here
+  vec3 n=normalize(vN),v=normalize(uCam-vW);if(dot(n,v)<0.)n=-n;float nv=clamp(dot(n,v),0.,1.);
+  vec3 r=reflect(-v,n);float F=.04+.96*pow(1.-nv,5.);
+  vec3 h=normalize(KEY+v);float nh=max(dot(n,h),0.),a2=pow(.36*.36,2.),D=a2/(3.1416*pow(nh*nh*(a2-1.)+1.,2.));
+  vec3 spec=env(r,.36)*F*.7*uEnv+vec3(.95,.97,1.)*D*F*.32*max(dot(n,KEY),0.);
+  vec3 coat=env(r,.12)*F*.7*uEnv;
+  vec3 col=vec3(.0085,.0088,.010)*(.35+1.4*max(dot(n,KEY),0.))+spec+coat;
+  col*=.82;col+=vec3(.9,.92,.95)*pow(1.-nv,4.)*.10*uEnv;
+  col+=vec3(.55,.92,.86)*vGlow*(.004+.16*pow(1.-nv,3.))*(1.-uLite);col*=1.-.62*uLite; // on the white flash the glass reads as near-black, like the first picture // a cool silver edge while the shards are in flight
+  col+=vec3(.30,1.,.82)*vTile*(.04+1.1*pow(1.-nv,3.)); // fast pieces and dust burn mint along their edges, like sparks
+  col+=vec3(.7,1.,.9)*vFlash*.5; // a flash as each piece locks in
+  // landed: letters and pane edges glow like lit glass, pane surfaces stay smoky
+  if(vRole>2.5)col=mix(col,vec3(.50,.86,.78)*(.80+.5*F)+spec*.25,vLand*.86);
+  else if(vRole<1.5)col=mix(col,vec3(.93,.91,.86)*(.80+.5*F)+spec*.25,vLand*(vRole<.5?.86:.8));
+  else col=mix(col,vec3(.018,.026,.032)+spec*.55,vLand*.85);
+  o=vec4(pow(aces(col),vec3(1./2.2)),1.);}`;
+ const sh=(t,s)=>{const x=gl.createShader(t);gl.shaderSource(x,s);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(x));return x};
+ const prog=gl.createProgram();gl.attachShader(prog,sh(gl.VERTEX_SHADER,VS));gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(prog);if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(prog));gl.useProgram(prog);
+ const U={};for(const n of["uModel","uVP","uG","uMode","uT","uSpeed","uZ0","uHit","uCamZ","uP","uQ","uStart","uBeam","uPalm","uImp","uStory","uPath","uS","uR","uCam","uEnv","uWaveR","uLite"])U[n]=gl.getUniformLocation(prog,n);
+ // ---- the screen layer: shockwave, RGB split, zoom blur, bloom, glitch slices, grain ----
+ const PV=`#version 300 es
+ out vec2 vUv;void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));vUv=p;gl_Position=vec4(p*2.-1.,0.,1.);}`;
+ const PF=`#version 300 es
+ precision highp float;in vec2 vUv;out vec4 o;uniform sampler2D uTex;uniform vec2 uRes,uH1,uH2;uniform vec4 uE;uniform float uT,uAsp,uFall;
+ float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+ float amp(float a){return a<0.?0.:exp(-a*3.)*(1.-exp(-a*40.));}
+ vec2 shock(vec2 uv,vec2 c,float a){if(a<0.)return uv;vec2 d=(uv-c)*vec2(uAsp,1.);float r=length(d)+1e-4,w=exp(-pow((r-a*1.5)*6.5,2.))*exp(-a*2.4);return uv-normalize(d)/vec2(uAsp,1.)*w*.05;}
+ void main(){vec2 uv=vUv,q=shock(shock(uv,uH1,uE.x),uH2,uE.y);
+  bool second=uE.y>=0.;vec2 cz=second?uH2:uH1;float b=second?amp(uE.y):amp(uE.x),gg=uE.w;
+  float row=floor(q.y*26.+floor(uT/45.)*3.),on=step(1.-.55*gg,h(vec2(row,floor(uT/45.))));q.x+=on*(h(vec2(row,7.))-.5)*.11*gg; // glitch slices
+  vec2 cd=q-.5;float ca=(.0016+.010*b+.013*gg)*(.5+dot(cd,cd)*3.);vec3 c=vec3(0.);
+  for(int i=0;i<6;i++){float k=float(i)/5.;vec2 u2=q-(q-cz)*b*.07*k;c+=vec3(texture(uTex,u2+cd*ca).r,texture(uTex,u2).g,texture(uTex,u2-cd*ca).b);}
+  c/=6.;
+  vec3 bl=vec3(0.);for(int i=0;i<8;i++){float a=.7854*float(i);vec2 off=vec2(cos(a),sin(a))/uRes;bl+=max(texture(uTex,q+off*10.).rgb-.62,0.)+max(texture(uTex,q+off*26.).rgb-.62,0.);}
+  c+=bl/16.*.8;
+  float dz=length((uv-cz)*vec2(uAsp,1.));
+  c+=vec3(.25,.9,.75)*b*.12*exp(-dz*2.5)+vec3(.85,1.,.96)*uE.z*(.05+.95*exp(-dz*2.4));
+  if(uFall>0.){float ln=0.;for(int L=0;L<3;L++){float cols=62.+float(L)*47.,cx=floor(uv.x*cols),r=h(vec2(cx,float(L)*3.1)),r2=h(vec2(cx,9.+float(L)));
+    float sp=.0011+.0016*r2,len=.05+.2*r,ph=fract(uv.y*(.45+.3*r)+uT*sp+r*7.3),hd=1.-ph/len,wd=smoothstep(.16,.04,abs(fract(uv.x*cols)-.5));
+    ln+=step(.45,r)*step(ph,len)*hd*hd*wd;}
+   c+=vec3(.92,.97,1.)*ln*uFall*.85;}
+  c*=1.-.6*dot(cd,cd);c+=(h(uv*uRes+fract(uT*.013)*91.)-.5)*.065;
+  o=vec4(c,1.);}`;
+ const pp=gl.createProgram();gl.attachShader(pp,sh(gl.VERTEX_SHADER,PV));gl.attachShader(pp,sh(gl.FRAGMENT_SHADER,PF));gl.linkProgram(pp);if(!gl.getProgramParameter(pp,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(pp));
+ const PU={};for(const n of["uTex","uRes","uH1","uH2","uE","uT","uAsp","uFall"])PU[n]=gl.getUniformLocation(pp,n);
+ const pvao=gl.createVertexArray();let post=true,msF=null,msC=null,msD=null,rsF=null,rTex=null;
+ function targets(){const w=cv.width,h=cv.height;
+  if(msF){gl.deleteFramebuffer(msF);gl.deleteRenderbuffer(msC);gl.deleteRenderbuffer(msD);gl.deleteFramebuffer(rsF);gl.deleteTexture(rTex)}
+  const S=Math.min(4,gl.getParameter(gl.MAX_SAMPLES)||0);
+  msF=gl.createFramebuffer();msC=gl.createRenderbuffer();msD=gl.createRenderbuffer();
+  gl.bindRenderbuffer(gl.RENDERBUFFER,msC);gl.renderbufferStorageMultisample(gl.RENDERBUFFER,S,gl.RGBA8,w,h);
+  gl.bindRenderbuffer(gl.RENDERBUFFER,msD);gl.renderbufferStorageMultisample(gl.RENDERBUFFER,S,gl.DEPTH_COMPONENT24,w,h);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,msF);gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.RENDERBUFFER,msC);gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,msD);
+  let ok=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
+  rTex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,rTex);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  rsF=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,rsF);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,rTex,0);
+  ok=ok&&gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;gl.bindFramebuffer(gl.FRAMEBUFFER,null);post=ok}
+ // ---- the dots of the character: round points, drawn into the same frame so they get the screen layer too ----
+ const DVS=`#version 300 es
+ layout(location=0) in vec2 aP;layout(location=1) in vec3 aM;layout(location=2) in vec3 aR;uniform mat4 uVP;uniform float uDpr,uBoom,uT;out float vB,vTint;
+ void main(){vec2 p=aP;float sz=aM.x,bm=max(uBoom,0.);
+  if(uBoom>=0.){p.y-=(1.1+1.3*aR.y)*(bm-450.*(1.-exp(-bm/450.)));sz*=max(0.,1.-bm/1900.);}
+  p+=vec2(sin(uT*.012+aR.x*40.),cos(uT*.011+aR.y*40.))*aR.z*1.5;
+  gl_Position=uVP*vec4(p,40.,1.);gl_PointSize=sz*uDpr;vB=aM.y;vTint=aM.z;}`;
+ const DFS=`#version 300 es
+ precision highp float;in float vB,vTint;out vec4 o;void main(){vec2 c=gl_PointCoord-.5;if(dot(c,c)>.25)discard;o=vec4(mix(vec3(.95,.93,.87),vec3(.40,1.,.84),vTint)*vB,1.);}`;
+ const dp=gl.createProgram();gl.attachShader(dp,sh(gl.VERTEX_SHADER,DVS));gl.attachShader(dp,sh(gl.FRAGMENT_SHADER,DFS));gl.linkProgram(dp);if(!gl.getProgramParameter(dp,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(dp));
+ const DU={};for(const n of["uVP","uDpr","uBoom","uT"])DU[n]=gl.getUniformLocation(dp,n);
+ // big pieces: position + normal; small shards: position + normal + rest centre + four random numbers
+ const vbo=gl.createBuffer(),vao=gl.createVertexArray();gl.bindVertexArray(vao);gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+ gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,24,0);gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,24,12);
+ gl.vertexAttrib2f(2,0,0);gl.vertexAttrib4f(3,0,0,0,0);gl.vertexAttrib4f(4,0,0,1,2);gl.vertexAttrib4f(5,0,0,1,0);
+ const fbo=gl.createBuffer(),fvao=gl.createVertexArray();gl.bindVertexArray(fvao);gl.bindBuffer(gl.ARRAY_BUFFER,fbo);
+ [[0,3,0],[1,3,12],[2,2,24],[3,4,32]].forEach(([l,n,off])=>{gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,n,gl.FLOAT,false,48,off)});
+ const tbo=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,tbo);gl.enableVertexAttribArray(4);gl.vertexAttribPointer(4,4,gl.FLOAT,false,16,0); // where each shard lands on the question page
+ const wbo=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,wbo);gl.enableVertexAttribArray(5);gl.vertexAttribPointer(5,4,gl.FLOAT,false,16,0); // and in the welcome
+ gl.enable(gl.DEPTH_TEST);
+
+ // ---- geometry helpers: convex outline → bevelled, extruded piece ----
+ let seed=4021;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+ function clip(poly,a,b,off){const mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2,l=Math.hypot(b[0]-a[0],b[1]-a[1])||1,nx=(b[0]-a[0])/l,ny=(b[1]-a[1])/l,out=[];
+  for(let i=0;i<poly.length;i++){const p=poly[i],q=poly[(i+1)%poly.length],dp=(p[0]-mx)*nx+(p[1]-my)*ny+off,dq=(q[0]-mx)*nx+(q[1]-my)*ny+off;
+   if(dp<=0)out.push(p);if((dp<0)!==(dq<0)){const t=dp/(dp-dq);out.push([p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t])}}return out}
+ const voronoi=(rect,pts,gap)=>pts.map((s,i)=>{let poly=[[rect[0]+gap/2,rect[1]+gap/2],[rect[2]-gap/2,rect[1]+gap/2],[rect[2]-gap/2,rect[3]-gap/2],[rect[0]+gap/2,rect[3]-gap/2]];
+  for(let j=0;j<pts.length;j++)if(j!==i){poly=clip(poly,s,pts[j],gap/2);if(poly.length<3)break}return poly});
+ function inset(P,o){const n=P.length,L=[];for(let i=0;i<n;i++){const a=P[i],b=P[(i+1)%n],l=Math.hypot(b[0]-a[0],b[1]-a[1])||1;L.push([a[0]-(b[1]-a[1])/l*o,a[1]+(b[0]-a[0])/l*o,(b[0]-a[0])/l,(b[1]-a[1])/l])}
+  const out=[];for(let i=0;i<n;i++){const A=L[(i+n-1)%n],B=L[i],den=A[2]*B[3]-A[3]*B[2];if(Math.abs(den)<1e-6){out.push([B[0],B[1]]);continue}
+   const t=((B[0]-A[0])*B[3]-(B[1]-A[1])*B[2])/den;out.push([A[0]+A[2]*t,A[1]+A[3]*t])}return out}
+ function rounded(P,r,SEG){const n=P.length,pts=[],nrm=[];for(let i=0;i<n;i++){const v=P[i],a=P[(i+n-1)%n],b=P[(i+1)%n];
+   let d1=[a[0]-v[0],a[1]-v[1]],d2=[b[0]-v[0],b[1]-v[1]];const l1=Math.hypot(...d1)||1,l2=Math.hypot(...d2)||1;d1=[d1[0]/l1,d1[1]/l1];d2=[d2[0]/l2,d2[1]/l2];
+   const A=Math.acos(Math.max(-1,Math.min(1,d1[0]*d2[0]+d1[1]*d2[1]))),tn=Math.tan(A/2)||1e-3;let t=Math.min(r/tn,.45*l1,.45*l2);const rr=t*tn,sn=Math.sin(A/2)||1e-3;
+   const bis=[d1[0]+d2[0],d1[1]+d2[1]],bl=Math.hypot(...bis)||1,cx=v[0]+bis[0]/bl*(rr/sn),cy=v[1]+bis[1]/bl*(rr/sn);
+   let a1=Math.atan2(v[1]+d1[1]*t-cy,v[0]+d1[0]*t-cx),a2=Math.atan2(v[1]+d2[1]*t-cy,v[0]+d2[0]*t-cx),da=a2-a1;while(da>Math.PI)da-=2*Math.PI;while(da<-Math.PI)da+=2*Math.PI;
+   for(let s=0;s<=SEG;s++){const an=a1+da*s/SEG;pts.push([cx+Math.cos(an)*rr,cy+Math.sin(an)*rr]);nrm.push([Math.cos(an),Math.sin(an)])}}return{pts,nrm}}
+ const area=P=>{let s=0;for(let i=0;i<P.length;i++){const a=P[i],b=P[(i+1)%P.length];s+=a[0]*b[1]-b[0]*a[1]}return s/2};
+ const centroid=P=>{let x=0,y=0;P.forEach(p=>{x+=p[0];y+=p[1]});return[x/P.length,y/P.length]};
+ // P is relative to the piece's own centre; writes triangles (position + normal)
+ function piece(P,out,G,SEG){if(area(P)<0)P=P.slice().reverse();const h=G.depth/2,b=G.bev,r=G.r,base=rounded(P,r,SEG),rings=[],prof=[];
+  for(let k=0;k<4;k++){const f=k*Math.PI/6;prof.push([b-b*Math.sin(f),h-b+b*Math.cos(f),Math.cos(f),Math.sin(f)])}
+  for(let k=0;k<4;k++){const f=Math.PI/2+k*Math.PI/6;prof.push([b-b*Math.sin(f),-h+b+b*Math.cos(f),Math.cos(f),Math.sin(f)])}
+  for(const[o,z,nz,ns]of prof)rings.push({pts:o>.01?rounded(inset(P,o),Math.max(.3,r-o),SEG).pts:base.pts,z,nz,ns});
+  const V=(x,y,z,nx,ny,nz)=>out.push(x,y,z,nx,ny,nz),n=base.pts.length,top=rings[0],bot=rings[7];
+  for(let i=0;i<n;i++){const p=top.pts[i],q=top.pts[(i+1)%n];V(0,0,h,0,0,1);V(p[0],p[1],h,0,0,1);V(q[0],q[1],h,0,0,1)}
+  for(let i=0;i<n;i++){const p=bot.pts[i],q=bot.pts[(i+1)%n];V(0,0,-h,0,0,-1);V(q[0],q[1],-h,0,0,-1);V(p[0],p[1],-h,0,0,-1)}
+  for(let m=0;m<7;m++){const A=rings[m],B=rings[m+1];for(let i=0;i<n;i++){const j=(i+1)%n,ni=base.nrm[i],nj=base.nrm[j],w=(R,k,nn)=>V(R.pts[k][0],R.pts[k][1],R.z,nn[0]*R.ns,nn[1]*R.ns,R.nz);
+   w(A,i,ni);w(B,i,ni);w(B,j,nj);w(A,i,ni);w(B,j,nj);w(A,j,nj)}}}
+ // half-plane clip that keeps the inside of convex polygon B
+ function clipIn(P,B){const sg=Math.sign(area(B))||1;for(let i=0;i<B.length&&P.length>=3;i++){const a=B[i],b=B[(i+1)%B.length],
+   f=p=>sg*((b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0])),out=[];
+   for(let j=0;j<P.length;j++){const p=P[j],q=P[(j+1)%P.length],fp=f(p),fq=f(q);if(fp>=0)out.push(p);if((fp>=0)!==(fq>=0)){const t=fp/(fp-fq);out.push([p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t])}}P=out}return P}
+
+ // ---- the sheet: ~24 medium pieces at rest, and the few thousand small shards they break into ----
+ let W,H,dpr,camZ,VP,G,shards=[],fine=[],cellPx=20,bigCount=0,fineCount=0,HF=2.5;const FOV=30*Math.PI/180;
+ const toW=(x,y)=>[x-W/2,H/2-y]; // screen px (y down) → world (y up, centre origin; 1 unit = 1 px at z = 0)
+ function layout(){W=innerWidth;H=innerHeight;dpr=Math.min(2,devicePixelRatio||1);cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);cv.style.width=W+"px";cv.style.height=H+"px";ov.width=cv.width;ov.height=cv.height;ov.style.width=W+"px";ov.style.height=H+"px";
+  camZ=(H/2)/Math.tan(FOV/2);VP=M.mul(M.persp(FOV,W/H,10,camZ*5),M.tr(0,0,-camZ));
+  G={depth:Math.max(12,Math.min(W,H)*.017),bev:1.6,r:2.2,gap:2.2};
+  seed=4021;const tall=H>W*1.05,C=tall?3:6,R=tall?6:4,pts=[];
+  for(let r=0;r<R;r++)for(let c=0;c<C;c++){let x=(c+.5+(rnd()-.5)*.82)/C,y=(r+.5+(rnd()-.5)*.82)/R;x=.5+(x-.5)*(.92+.08*Math.abs(x-.5)*2);pts.push([x*W,y*H])}
+  const polys=voronoi([-2,-2,W+2,H+2],pts,G.gap).filter(p=>p.length>=3);
+  shards=polys.map(P=>{const w=P.map(p=>toW(p[0],p[1])),c=centroid(w);return{c,loc:w.map(p=>[p[0]-c[0],p[1]-c[1]])}});
+  const out=[];shards.forEach(s=>{s.start=out.length/6;piece(s.loc,out,G,3);s.count=out.length/6-s.start});
+  bigCount=out.length/6;gl.bindBuffer(gl.ARRAY_BUFFER,vbo);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(out),gl.STATIC_DRAW);
+  // thousands of small cells over the whole screen, each cut along the big cracks so the break is seamless
+  const N=tall?1500:2700,sz=Math.sqrt(W*H/N),cols=Math.ceil(W/sz),rows=Math.ceil(H/sz),gp=[];
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)gp.push([(c+.15+.7*rnd())*W/cols,(r+.15+.7*rnd())*H/rows]);
+  const bb=polys.map(P=>[Math.min(...P.map(p=>p[0])),Math.min(...P.map(p=>p[1])),Math.max(...P.map(p=>p[0])),Math.max(...P.map(p=>p[1]))]);
+  const F=[];fine=[];cellPx=sz;HF=Math.max(1.6,sz*.11);
+  const V=(x,y,z,nx,ny,nz,c,rr)=>F.push(x,y,z,nx,ny,nz,c[0],c[1],rr[0],rr[1],rr[2],rr[3]);
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){const s=gp[r*cols+c];
+   let cell=[[s[0]-3*sz,s[1]-3*sz],[s[0]+3*sz,s[1]-3*sz],[s[0]+3*sz,s[1]+3*sz],[s[0]-3*sz,s[1]+3*sz]];
+   for(let dr=-2;dr<=2;dr++)for(let dc=-2;dc<=2;dc++){const rr=r+dr,cc=c+dc;if((dr||dc)&&rr>=0&&rr<rows&&cc>=0&&cc<cols)cell=clip(cell,s,gp[rr*cols+cc],0)}
+   const cb=[Math.min(...cell.map(p=>p[0])),Math.min(...cell.map(p=>p[1])),Math.max(...cell.map(p=>p[0])),Math.max(...cell.map(p=>p[1]))];
+   polys.forEach((B,bi)=>{const b=bb[bi];if(b[0]>cb[2]||b[2]<cb[0]||b[1]>cb[3]||b[3]<cb[1])return;
+    let P=clipIn(cell,B);if(P.length<3||Math.abs(area(P))<5)return;
+    let w=P.map(p=>toW(p[0],p[1]));if(area(w)<0)w.reverse();const ce=centroid(w),L=w.map(p=>[p[0]-ce[0],p[1]-ce[1]]),rr=[rnd(),rnd(),rnd(),rnd()],n=L.length;fine.push({start:F.length/12,c:ce,r:rr});
+    for(let i=0;i<n;i++){const p=L[i],q=L[(i+1)%n];V(0,0,HF,0,0,1,ce,rr);V(p[0],p[1],HF,0,0,1,ce,rr);V(q[0],q[1],HF,0,0,1,ce,rr);
+     const ex=q[0]-p[0],ey=q[1]-p[1],l=Math.hypot(ex,ey)||1,nx=ey/l,ny=-ex/l;
+     V(p[0],p[1],HF,nx,ny,0,ce,rr);V(p[0],p[1],-HF,nx,ny,0,ce,rr);V(q[0],q[1],-HF,nx,ny,0,ce,rr);
+     V(p[0],p[1],HF,nx,ny,0,ce,rr);V(q[0],q[1],-HF,nx,ny,0,ce,rr);V(q[0],q[1],HF,nx,ny,0,ce,rr)}fine[fine.length-1].count=F.length/12-fine[fine.length-1].start})}
+  fineCount=F.length/12;gl.bindBuffer(gl.ARRAY_BUFFER,fbo);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(F),gl.STATIC_DRAW);
+  layout.pieces=F.length/12;layout.F=new Float32Array(F);targets()}
+
+ // ---- the choreography (ms after the click) ----
+ // break · scatter into a deep cloud while the camera swings away · the camera swings back and the
+ // chaos snaps into "welcome to / TASTE RADAR" · it breaks again, the camera swings the other way,
+ // and the cloud snaps into the question page · the real page takes over
+ const TL=ACT?{speed:4.6,imp:0,asm:520,sweep:380,fly:700,settle:220,B:2300,asm2:1e9,show:1e9,fade:1e9,end:3700}:{speed:4.6,imp:1100,asm:2700,sweep:340,fly:640,settle:220,B:5600,B2:7400,G:8100,F:9100,asm2:9100,show:11550,fade:11590,end:12050};
+ let beam=[0,0,0,0],palm=[0,0],palmPx=[0,0];
+ let phase="idle",t0=0,hit=[0,0],tilt={x:0,y:0},ptr=null;
+ const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+ // sample the ink of a canvas into exactly n points
+ function inkPoints(x,n,roleAt){const im=x.getImageData(0,0,W,H).data;let ink=0;for(let i=3;i<im.length;i+=4)if(im[i]>110)ink++;if(!ink)return null;
+  const sp=Math.max(1.2,Math.sqrt(ink/n)),pts=[],ox=rnd()*sp,oy=rnd()*sp;
+  for(let yy=oy;yy<H;yy+=sp)for(let xx=ox;xx<W;xx+=sp){if(im[(Math.floor(yy)*W+Math.floor(xx))*4+3]>110)pts.push([xx,yy,Math.min(.6,Math.max(.05,sp*1.85/cellPx)),roleAt(xx,yy)])}
+  shuffle(pts);const out=pts.slice(0,n);while(out.length<n&&pts.length)out.push(pts[Math.floor(rnd()*pts.length)]);return out}
+ // "welcome to" in the page's serif, "TASTE RADAR" much bigger below it, RADAR in the accent colour
+ function welcome(n){const c=document.createElement("canvas");c.width=W;c.height=H;const x=c.getContext("2d",{willReadFrequently:true});x.fillStyle="#fff";x.textBaseline="alphabetic";
+  try{x.fontStretch="extra-condensed"}catch(_){}
+  const bf=s=>"850 "+s+"px Archivo, 'Arial Narrow', sans-serif",stack=H>W*1.05;x.font=bf(100);
+  const w100=x.measureText(stack?"RADAR":"TASTE RADAR").width||600,big=Math.min(W*(stack?.8:.86)/w100*100,H*(stack?.17:.24)),small=Math.max(26,big*(stack?.5:.46));
+  const lines=stack?["TASTE","RADAR"]:["TASTE RADAR"],lh=big*.86,gap=small*.3,tot=small+gap+lh*lines.length,y0=H/2-tot/2+small*.82;
+  x.font="italic 300 "+small+"px 'Cormorant Garamond', Cormorant, Georgia, serif";x.textAlign="center";x.fillText("welcome to",W/2,y0);
+  x.font=bf(big);let rx=0,top=0;
+  lines.forEach((ln,k)=>{const y=y0+gap+lh*(k+1)+small*.05,wl=x.measureText(ln).width,x0=W/2-wl/2;x.textAlign="left";x.fillText(ln,x0,y);
+   if(ln.startsWith("TASTE"))welcome.taste=[x0+x.measureText("TASTE").width/2,y-big*.38];
+   if(ln.includes("RADAR")){rx=x0+(ln==="RADAR"?0:x.measureText("TASTE ").width);top=y-big*.8;welcome.radar=[rx+big*.12,top+big*.4]}});welcome.thr=y0+gap*.5;
+  return inkPoints(x,n,(px,py)=>py>top&&px>=rx-1?3:0)}
+ function landing(){ // the question page, measured from the page itself
+  const q=document.querySelector("#intro .q2"),n=fine.length,TX=[],FR=[],SU=[];if(!q||!n)return null;
+  const cv2=document.createElement("canvas");cv2.width=W;cv2.height=H;const x=cv2.getContext("2d",{willReadFrequently:true});
+  const glyphs=[];
+  for(const e of q.querySelectorAll(".eyebrow,.serifq,.qsub,.pm,.pw,.pd")){x.clearRect(0,0,W,H);x.fillStyle="#fff";
+   let bb=[1e9,1e9,-1e9,-1e9],fs=12;const wk=document.createTreeWalker(e,NodeFilter.SHOW_TEXT);let nd;
+   while(nd=wk.nextNode()){const cs=getComputedStyle(nd.parentElement);fs=parseFloat(cs.fontSize)||fs;
+    x.font=cs.fontStyle+" "+cs.fontWeight+" "+cs.fontSize+" "+cs.fontFamily;try{x.letterSpacing=cs.letterSpacing==="normal"?"0px":cs.letterSpacing}catch(_){}
+    const up=cs.textTransform==="uppercase",re=/\S+/g;let m;
+    while((m=re.exec(nd.data))){const rg=document.createRange();rg.setStart(nd,m.index);rg.setEnd(nd,m.index+m[0].length);const b=rg.getBoundingClientRect();
+     if(!b.width||b.bottom<0||b.top>H)continue;const w=up?m[0].toUpperCase():m[0],mt=x.measureText(w),
+      asc=mt.fontBoundingBoxAscent||fs*.8,des=mt.fontBoundingBoxDescent||fs*.2;
+     x.fillText(w,b.left,b.top+(b.height-asc-des)/2+asc);bb=[Math.min(bb[0],b.left),Math.min(bb[1],b.top),Math.max(bb[2],b.right),Math.max(bb[3],b.bottom)]}}
+   if(bb[2]<=bb[0])continue;const X0=Math.max(0,Math.floor(bb[0])-2),Y0=Math.max(0,Math.floor(bb[1])-2),X1=Math.min(W,Math.ceil(bb[2])+4),Y1=Math.min(H,Math.ceil(bb[3])+2);
+   if(X1<=X0||Y1<=Y0)continue;const im=x.getImageData(X0,Y0,X1-X0,Y1-Y0),iw=X1-X0;let ink=0;for(let i=3;i<im.data.length;i+=4)if(im.data[i]>110)ink++;
+   if(ink)glyphs.push({im,iw,X0,Y0,ink,fs})}
+  // share the letters' budget by ink, a little in favour of small text so it still reads
+  const tb=Math.round(n*.5),wsum=glyphs.reduce((a,g)=>a+Math.pow(g.ink,.8),0);
+  glyphs.forEach(g=>{const k=Math.max(12,Math.round(tb*Math.pow(g.ink,.8)/wsum)),sp=Math.max(1.4,Math.sqrt(g.ink/k)),pts=[],ox=rnd()*sp,oy=rnd()*sp;
+   for(let yy=oy;yy<g.im.height;yy+=sp)for(let xx=ox;xx<g.iw;xx+=sp){const i=(Math.floor(yy)*g.iw+Math.floor(xx))*4+3;if(g.im.data[i]>110)pts.push([g.X0+xx,g.Y0+yy])}
+   for(let i=pts.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[pts[i],pts[j]]=[pts[j],pts[i]]}
+   pts.slice(0,k).forEach(p=>TX.push([p[0],p[1],Math.min(.55,Math.max(.07,sp*1.9/cellPx)),0]))});
+  // the pane edges, traced as rounded rectangles
+  const panes=[...q.querySelectorAll(".pane")].map(p=>({r:p.getBoundingClientRect(),rad:parseFloat(getComputedStyle(p).borderTopLeftRadius)||14}));
+  const per=panes.reduce((a,p)=>a+2*(p.r.width+p.r.height),0),fb=Math.min(Math.round(n*.16),Math.round(per/4)),fs2=per/Math.max(1,fb);
+  panes.forEach(({r,rad})=>{const rr=Math.min(rad,r.width/2,r.height/2),L=2*(r.width+r.height),k=Math.round(L/fs2);
+   for(let i=0;i<k;i++){let d=(i+rnd()*.5)/k*L,px,py;const w=r.width,h=r.height;
+    if(d<w){px=r.left+d;py=r.top}else if((d-=w)<h){px=r.right;py=r.top+d}else if((d-=h)<w){px=r.right-d;py=r.bottom}else{d-=w;px=r.left;py=r.bottom-d}
+    // pull points near a corner onto the rounded arc
+    const cx=Math.min(Math.max(px,r.left+rr),r.right-rr),cy=Math.min(Math.max(py,r.top+rr),r.bottom-rr);
+    if(cx!==px&&cy!==py){const a=Math.atan2(py-cy,px-cx);px=cx+Math.cos(a)*rr;py=cy+Math.sin(a)*rr}
+    FR.push([px,py,Math.min(.42,Math.max(.1,fs2*1.7/cellPx)),1])}});
+  // everything else lays down the pane surfaces, as an even scatter of smoky glass
+  const left=n-TX.length-FR.length,pa=panes.reduce((a,p)=>a+p.r.width*p.r.height,0);
+  if(left>0&&pa>0){const ssz=Math.sqrt(pa/left);
+   panes.forEach(({r},pi)=>{const k=pi===panes.length-1?left-SU.length:Math.round(left*r.width*r.height/pa),cols=Math.max(1,Math.round(Math.sqrt(k*r.width/r.height))),rows=Math.ceil(k/cols);
+    for(let i=0;i<k;i++)SU.push([r.left+4+((i%cols)+.15+.7*rnd())*(r.width-8)/cols,r.top+4+(Math.floor(i/cols)+.15+.7*rnd())*(r.height-8)/rows,Math.min(.95,Math.max(.12,ssz*1.25/cellPx)),2])})}
+  let all=TX.concat(FR,SU);while(all.length<n)all.push(all[Math.floor(rnd()*all.length)]||[W/2,H/2,.2,2]);all=all.slice(0,n);
+  return all}
+
+ // ---- the two original characters, drawn as flat layers that the shards will be dealt onto ----
+ // a layer is a canvas; the shards sample its ink. body = dark glass, edge = lit outlines, glow = mint
+ function layerSet(){const mk=()=>{const c=document.createElement("canvas");c.width=W;c.height=H;return c},L={fill:mk(),edge:mk(),glow:mk(),text:mk()};
+  for(const k in L)L[k].x=L[k].getContext("2d",{willReadFrequently:true});return L}
+ const mir=P=>P.map(p=>[-p[0],p[1]]).reverse();
+ // THE SENTINEL: a tall faceted glass guardian, right arm raised as a cannon. Units: ~109 high, origin on its centre line.
+ const SENT={
+  body:[ // symmetric parts (drawn and mirrored)
+   [[-7,8],[-5,2],[5,2],[7,8],[6.5,15],[3,19],[-3,19],[-6.5,15]],                // helmet
+   [[-1.8,2],[0,-9],[1.8,2]],                                                     // crest
+   [[-12,26],[12,26],[14,40],[8,56],[-8,56],[-14,40]],                            // chest
+   [[-9,56],[9,56],[11,62],[-11,62]],                                             // belt
+   [[-4,62],[4,62],[0,72]],                                                       // hip plate
+   [[-3,19],[3,19],[4,23],[-4,23]]],                                              // neck
+  side:[ // right-side parts, mirrored to the left
+   [[5,3],[11.5,-2],[7.5,9]],                                                     // helmet fin
+   [[5,23],[19,21],[26,26],[24,34],[10,33]],                                      // shoulder
+   [[19,21],[24,12],[27,26]],                                                     // shoulder fin
+   [[3,62],[13,60],[17,80],[9,82]],                                               // thigh
+   [[13,76],[18,81],[13,86],[8,81]],                                              // knee
+   [[9,84],[17,84],[20,97],[10,97]],                                              // shin
+   [[8,97],[22,97],[24,100],[7,100]]],                                            // boot
+  armL:[[[-26,26],[-14,26],[-16,44],[-26,44]],[[-27,45],[-16,45],[-17,62],[-26,64]],[[-27,64],[-16,63],[-18,72],[-26,72]]],
+  armR:[[[14,26],[34,25],[34,34],[14,35]],[[33,23],[41,24],[41,36],[33,36]],[[41,24],[62,26],[67,29.5],[67,33],[62,36],[41,36]]],
+  glow:[[[-5,10],[5,10],[4,12.6],[-4,12.6]],[[-1.3,28],[1.3,28],[.9,54],[-.9,54]],[[-9,31],[0,36.5],[9,31],[9,33.4],[0,39],[-9,33.4]],
+   [[62,24.5],[69,28],[69,34],[62,37.5],[64,31]],[[44,29.2],[60,29.2],[60,31.2],[44,31.2]]],
+  palm:[69,31]};
+ function sentinel(){const L=layerSet(),tall=H>W*1.05,wide=95,hgt=109;
+  const u=tall?Math.min(W*.92/wide,H*.46/hgt):Math.min(H*.7/hgt,W*.5/wide),cx=tall?(W-wide*u)/2+27*u:W*.27-((68-27)/2)*u*.0,top=tall?H*.12+9*u:H*.5-(hgt/2-9)*u;
+  const T=(x,y)=>[cx+x*u,top+y*u],poly=(c,P,mode)=>{c.beginPath();P.forEach((p,i)=>{const q=T(p[0],p[1]);i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1])});c.closePath();mode==="s"?c.stroke():c.fill()};
+  const bodyParts=[...SENT.body,...SENT.side,...SENT.side.map(mir),...SENT.armL,...SENT.armR];
+  L.fill.x.fillStyle="#fff";bodyParts.forEach(P=>poly(L.fill.x,P,"f"));
+  L.edge.x.strokeStyle="#fff";L.edge.x.lineWidth=Math.max(1.6,u*.5);L.edge.x.lineJoin="miter";bodyParts.forEach(P=>poly(L.edge.x,P,"s"));
+  L.glow.x.fillStyle="#fff";SENT.glow.forEach(P=>poly(L.glow.x,P,"f"));
+  return{L,palm:T(...SENT.palm),u,box:[cx-27*u,top-9*u,cx+68*u,top+100*u]}}
+ // THE LEAPER: a lean acrobat of glass caught mid-dive, a ribbon of shards streaming behind it
+ function leaper(){const L=layerSet(),s=Math.min(W,H)*(H>W*1.05?.92:.86)/100,ox=W/2-50*s,oy=H/2-50*s,T=(x,y)=>{return[ox+x*s,oy+y*s]};
+  // tapered limbs: [from, to, width at from, width at to]
+  const LIMBS=[[[58,44],[34,63],15,11],[[34,63],[53,73],10.5,7.5],[[53,73],[51,92],7.5,5.5],[[34,63],[18,69],10,7],[[18,69],[2,60],7,4.5],
+   [[58,44],[75,52],7.5,5.5],[[75,52],[91,61],5.5,4.5],[[58,44],[49,33],7.5,5.5],[[49,33],[37,25],5.5,4.5]];
+  const SCARF=[[57,40],[40,20],[18,10],[6,6],[17,17],[0,19],[16,26],[30,34],[46,42]];
+  const HEAD=[[63,33],[67,27],[75,27],[79,32],[78,40],[73,44],[66,42]];
+  const limbPath=(c,[a,b,w1,w2])=>{const A=T(...a),B=T(...b),dx=B[0]-A[0],dy=B[1]-A[1],l=Math.hypot(dx,dy)||1,nx=-dy/l,ny=dx/l,r1=w1*s/2,r2=w2*s/2;
+   c.moveTo(A[0]+nx*r1,A[1]+ny*r1);c.lineTo(B[0]+nx*r2,B[1]+ny*r2);c.arc(B[0],B[1],r2,Math.atan2(ny,nx),Math.atan2(-ny,-nx),true);c.lineTo(A[0]-nx*r1,A[1]-ny*r1);c.arc(A[0],A[1],r1,Math.atan2(-ny,-nx),Math.atan2(ny,nx),true);c.closePath()};
+  const poly=(c,P)=>{c.moveTo(...T(...P[0]));P.slice(1).forEach(p=>c.lineTo(...T(...p)));c.closePath()};
+  const shapes=c=>{LIMBS.forEach(l=>{c.beginPath();limbPath(c,l);if(c.__s)c.stroke();else c.fill()});c.beginPath();poly(c,HEAD);c.__s?c.stroke():c.fill()};
+  const f=L.fill.x;f.fillStyle="#fff";shapes(f);f.beginPath();poly(f,SCARF);f.fill();
+  const e=L.edge.x;e.strokeStyle="#fff";e.lineWidth=Math.max(1.6,s*.55);e.lineJoin="round";e.__s=1;shapes(e);e.beginPath();poly(e,SCARF);e.stroke();
+  const g=L.glow.x;g.fillStyle="#fff";
+  {const a=T(66,34),b=T(79,34);g.beginPath();g.moveTo(a[0],a[1]);g.lineTo(b[0],b[1]-s*.5);g.lineTo(b[0]-s,b[1]+3.4*s);g.lineTo(a[0]+s,a[1]+3.4*s);g.closePath();g.fill()}   // visor
+  [[91,61],[37,25],[51,92],[2,60]].forEach(p=>{const q=T(...p);g.beginPath();g.arc(q[0],q[1],3.4*s,0,7);g.fill()});                                    // fists and feet
+  {const a=T(55,47),b=T(40,60);g.beginPath();g.moveTo(a[0]-s,a[1]-s);g.lineTo(a[0]+s,a[1]+s);g.lineTo(b[0]+s,b[1]+s);g.lineTo(b[0]-s,b[1]-s);g.closePath();g.fill()}   // core line
+  return{L,centre:[W/2,H/2],box:[ox,oy,ox+100*s,oy+100*s]}}
+
+ // ---- the stippled character: a skeleton, thousands of dots dealt onto its body, a flight path and the bomb ----
+ const dg=a=>a*Math.PI/180;
+ const POSE={fly:{torso:0,head:0,uaF:-9,laF:-4,uaB:8,laB:4,thF:176,shF:178,foF:172,thB:184,shB:182,foB:192},
+  thr:{torso:-62,head:-56,uaF:26,laF:58,uaB:168,laB:196,thF:38,shF:96,foF:10,thB:128,shB:152,foB:175}};
+ const shortest=(a,b,k)=>{const d=((b-a+Math.PI)%(2*Math.PI)+3*Math.PI)%(2*Math.PI)-Math.PI;return a+d*k};
+ const catmull=(p0,p1,p2,p3,u)=>{const u2=u*u,u3=u2*u;return p1.map((_,i)=>.5*(2*p1[i]+(-p0[i]+p2[i])*u+(2*p0[i]-5*p1[i]+4*p2[i]-p3[i])*u2+(-p0[i]+3*p1[i]-3*p2[i]+p3[i])*u3))};
+ let story=null;
+function makeStory(hx,hy,tp,rp){const tall=H>W*1.05,sc=Math.min(H*.34,W*(tall?.55:.34))/100,B1=TL.B,B2=TL.B2;
+  const S0=[hx-.3*W,1.15*H],RT=[.88*W,.55*H],TR=[.68*W,.16*H],TLp=[.14*W,.22*H],LL=[.1*W,.6*H];
+  const NM=["torso","head","uaF","laF","uaB","laB","thF","shF","foF","thB","shB","foB"],mk=a=>{const o={};NM.forEach((n,i)=>o[n]=a[i]);return o};
+  // the stickman's poses, facing right: angles in degrees (0 = right, 90 = down). Every move in the opening is a punch.
+  const STAND=mk([-90,-90,40,150,140,30,86,92,0,94,88,180]),GUARD=mk([-72,-64,55,-60,105,-50,35,120,15,140,70,170]),TUCK=mk([-62,-42,25,105,165,80,20,130,100,40,150,110]),
+   DIVE=mk([0,0,-6,-3,8,4,176,178,172,184,182,192]),
+   SKY=mk([-84,-76,-105,-85,-75,-60,30,112,10,150,72,172]),SMASH=mk([-44,-26,58,70,52,64,28,98,10,140,112,175]),   // hulk smash: both fists overhead, then both driven down
+   LUNGE=mk([-48,-40,-8,-8,160,200,25,100,10,150,98,180]),                    // the dive ends in a straight punch through the glass
+   AWIND=mk([-60,-52,165,225,115,-40,38,115,12,150,80,170]),                  // fist pulled back to throw
+   AIR=mk([-28,-22,-22,-22,150,215,160,200,178,172,195,185]),                 // flying cross: one fist leading, body streamlined
+   HUP=mk([-84,-82,-115,-70,100,-50,40,115,12,140,75,170]),                   // fist raised high for the hammer blow
+   HDN=mk([-44,-32,50,46,165,190,28,98,8,132,112,170]),                      // hammer coming down
+   JAB=mk([-72,-68,-6,-4,110,-50,36,112,12,142,68,172]),CROSS=mk([-66,-62,60,-70,-8,-6,30,108,10,148,72,175]),
+   LOAD=mk([-54,-50,105,60,100,-50,28,125,18,150,65,170]),UPPER=mk([-66,-74,-30,-78,140,205,45,100,10,125,95,175]),
+   WIND2=mk([-84,-80,100,20,160,40,40,115,12,145,70,172]),FIN=mk([-50,-44,170,200,-6,-6,25,100,10,150,98,180]);
+  // where a fist sits relative to the hip (in sc units), so each landing punch lands exactly on its target
+  const fist=(P,back)=>{const r=n=>P[n]*Math.PI/180,sx=Math.cos(r("torso"))*31,sy=Math.sin(r("torso"))*31,u=r(back?"uaB":"uaF"),l=r(back?"laB":"laF");
+   return[sx+Math.cos(u)*19+Math.cos(l)*17,sy+Math.sin(u)*19+Math.sin(l)*17]};
+  const f0=fist(SMASH),fT=fist(UPPER),fR=fist(FIN,1);
+  const C=[hx-f0[0]*sc,hy-f0[1]*sc],PT=[tp[0]-fT[0]*sc,tp[1]-fT[1]*sc],PT2=[PT[0]+.04*W,PT[1]+.08*H],PP=[rp[0]-fR[0]*sc,rp[1]-fR[1]*sc],hd=Math.atan2(C[1]-S0[1],C[0]-S0[0]);
+  const seg=(a,b,f,t,o)=>Object.assign({a,b,f,t,arc:0,rot:0,face:1,lin:false,poses:[[0,STAND],[1,STAND]]},o),CR=[[0,GUARD],[1,GUARD]],FL=[[0,GUARD],[.18,TUCK],[.82,TUCK],[1,GUARD]],
+   AP=[[0,GUARD],[.26,AWIND],[.5,AIR],[.8,AIR],[1,GUARD]],HM=[[0,GUARD],[.22,HUP],[.6,HUP],[.8,HDN],[1,HDN]],
+   CB=[[0,GUARD],[.09,JAB],[.18,CROSS],[.27,JAB],[.36,CROSS],[.62,LOAD],[.9,UPPER],[1,UPPER]];
+  const SEG=[seg(0,TL.imp,S0,C,{lin:true,arc:.62*H,poses:[[0,TUCK],[.3,SKY],[.68,SKY],[.93,SMASH],[1,SMASH]]}),
+   seg(TL.imp,1500,C,C,{poses:[[0,SMASH],[.6,SMASH],[1,GUARD]]}),
+   seg(1500,2250,C,RT,{lin:true,arc:.2*H,rot:2*Math.PI,poses:FL}),seg(2250,2400,RT,RT,{face:-1,poses:CR}),
+   seg(2400,3100,RT,TR,{lin:true,arc:.1*H,face:-1,poses:AP}),seg(3100,3250,TR,TR,{face:-1,poses:CR}),
+   seg(3250,4000,TR,TLp,{lin:true,arc:.12*H,rot:2*Math.PI,face:-1,poses:FL}),seg(4000,4150,TLp,TLp,{face:1,poses:CR}),
+   seg(4150,4850,TLp,LL,{lin:true,arc:.08*H,face:1,poses:HM}),seg(4850,5000,LL,LL,{face:1,poses:[[0,HDN],[.5,HDN],[1,GUARD]]}),
+   seg(5000,B1,LL,PT,{lin:true,arc:.06*H,face:1,poses:CB}),
+   seg(B1,B1+400,PT,PT2,{poses:[[0,UPPER],[1,GUARD]]}),seg(B1+400,B1+700,PT2,PT2,{poses:[[0,GUARD],[1,STAND]]}),
+   seg(B1+700,B2,PT2,PP,{lin:true,arc:.05*H,poses:[[0,STAND],[.18,GUARD],[.5,WIND2],[.84,WIND2],[1,FIN]]}),
+   seg(B2,B2+20000,PP,PP,{poses:[[0,FIN],[1,FIN]]})];
+  const segAt=g=>{let i=0;while(i<SEG.length-1&&g>=SEG[i+1].a)i++;return i};
+  function state(g){g=Math.max(0,g);const i=segAt(g),q=SEG[i],u=Math.max(0,Math.min(1,(g-q.a)/(q.b-q.a))),e=q.lin?u:u*u*(3-2*u),
+   P=[q.f[0]+(q.t[0]-q.f[0])*e,q.f[1]+(q.t[1]-q.f[1])*e-q.arc*4*u*(1-u)],pf=i?SEG[i-1].face:q.face,ff=pf+(q.face-pf)*sm(q.a,q.a+130,g),
+   r=q.rotFn?q.rotFn(u):q.rot*sm(.1,.9,u)*1,pz=q.poses;let k=0;while(k<pz.length-2&&u>=pz[k+1][0])k++;
+   const a=pz[k],b=pz[k+1],w=sm(a[0],b[0],u),o={};NM.forEach(n=>o[n]=a[1][n]+(b[1][n]-a[1][n])*w);return{P,ff,rot:r*(ff<0?-1:1)*(q.rotFn?1:1),pose:o}}
+  const pathPx=g=>state(Math.min(g,B2+50)).P;
+  const path=new Float32Array(256);for(let k=0;k<128;k++){const p=pathPx(k*50),w=toW(p[0],p[1]);path[k*2]=w[0];path[k*2+1]=w[1]}
+  function joints(g){const S=state(g),A={};for(const n of NM)A[n]=S.pose[n]*Math.PI/180;
+   const add=(p,ang,l)=>[p[0]+Math.cos(ang)*l*sc,p[1]+Math.sin(ang)*l*sc],O=[0,0],neck=add(O,A.torso,34),sh=add(O,A.torso,31),hc=add(neck,A.head,8),eF=add(sh,A.uaF,19),wF=add(eF,A.laF,17),eB=add(sh,A.uaB,19),wB=add(eB,A.laB,17),
+    kF=add(O,A.thF,35),aF=add(kF,A.shF,34),tF=add(aF,A.foF,9),kB=add(O,A.thB,35),aB=add(kB,A.shB,34),tB=add(aB,A.foB,9),cr=Math.cos(S.rot),sr=Math.sin(S.rot);
+   const J=[O,neck,hc,sh,eF,wF,eB,wB,kF,aF,tF,kB,aB,tB].map(p=>{const x=p[0]*S.ff,y=p[1];return[S.P[0]+x*cr-y*sr,S.P[1]+x*sr+y*cr]});J.face=S.ff;return J}
+  const lands=[2250,3100,4000,4850,B1+300].map(g=>{const J=joints(g),f=J[10][1]>J[13][1]?J[10]:J[13];return{g,x:f[0],y:f[1]+2*sc}});
+  const lw=7*sc,hr=9.5*sc;
+  function figure(c,g,alpha,rim){const J=joints(g),ln=(pts,w)=>{c.beginPath();c.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)c.lineTo(pts[i][0],pts[i][1]);c.lineWidth=w;c.stroke()};
+   const limbs=[[[J[0],J[1]],lw*1.15],[[J[3],J[4],J[5]],lw*.9],[[J[3],J[6],J[7]],lw*.9],[[J[0],J[8],J[9],J[10]],lw],[[J[0],J[11],J[12],J[13]],lw]];
+   c.lineCap="round";c.lineJoin="round";c.globalAlpha=alpha;
+   if(rim){c.strokeStyle="rgba(214,236,255,.8)";for(const[p,w]of limbs)ln(p,w+3.4);c.fillStyle="rgba(214,236,255,.8)";c.beginPath();c.arc(J[2][0],J[2][1],hr+1.7,0,7);c.fill();for(const k of[5,7]){c.beginPath();c.arc(J[k][0],J[k][1],lw*.72+1.7,0,7);c.fill()}}
+   c.strokeStyle="#030405";c.fillStyle="#030405";for(const[p,w]of limbs)ln(p,w);c.beginPath();c.arc(J[2][0],J[2][1],hr,0,7);c.fill();for(const k of[5,7]){c.beginPath();c.arc(J[k][0],J[k][1],lw*.72,0,7);c.fill()}
+   if(rim){c.fillStyle="rgba(255,255,255,.95)";c.beginPath();c.arc(J[2][0]+J.face*hr*.5,J[2][1]-hr*.45,hr*.2,0,7);c.fill()}
+   c.globalAlpha=1}
+  // a short starburst where a punch lands (dark rays under light ones, so it reads on glass and on the white flash)
+  const burst=(c,x,y,age,dur,m)=>{if(age<0||age>dur)return;const u=age/dur,e=1-Math.pow(1-u,3),R=m*14*sc;c.save();c.translate(x,y);c.lineCap="round";c.globalAlpha=1-u;
+   for(const[col,wd]of[["#030405",1],["rgba(236,246,255,.95)",.42]]){c.strokeStyle=col;
+    for(let k=0;k<10;k++){const th=k*.6283+.31,r0=R*(.3+.9*e),r1=R*(.65+1.5*e);c.lineWidth=Math.max(1.2,lw*.42*wd*(1-u)+(wd<1?0:1.5));c.beginPath();c.moveTo(Math.cos(th)*r0,Math.sin(th)*r0);c.lineTo(Math.cos(th)*r1,Math.sin(th)*r1);c.stroke()}
+    c.lineWidth=Math.max(1,lw*.3*wd*(1-u)+(wd<1?0:1.2));c.beginPath();c.arc(0,0,R*(.35+1.2*e),0,7);c.stroke()}
+   c.restore()},hl=joints(4850)[5],HITS=[[hx,hy,TL.imp,600,3.4],[hl[0],hl[1],4850,380,1.5],[tp[0],tp[1],B1,430,2.1],[rp[0],rp[1],B2,500,2.4]];
+  // ---- cinematic layer ----
+  const hash=n=>{const x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x)};
+  const JBS=[[.09,0],[.18,1],[.27,0],[.36,1]].map(([u,k])=>[5000+(B1-5000)*u,k?7:5]);
+  function speedLines(c,g){const a=joints(g)[0],b=joints(g-40)[0],dx=a[0]-b[0],dy=a[1]-b[1],sp=Math.hypot(dx,dy)/40;if(sp<.22)return;
+   const ux=dx/(sp*40),uy=dy/(sp*40),k=Math.min(1,sp/.8),f=Math.floor(g/45);c.save();c.lineCap="round";
+   for(let i=0;i<16;i++){const off=(hash(i*7+f)-.5)*H*.5,lead=hash(i*3+f*5)*60*sc,len=(40+hash(i+f*2)*90)*sc*k;
+    const px=a[0]-uy*off-ux*lead,py=a[1]+ux*off-uy*lead;c.strokeStyle="rgba(236,246,255,"+(.16+.3*hash(i*11+f))*k+")";c.lineWidth=1+hash(i*5+f)*2.2;
+    c.beginPath();c.moveTo(px,py);c.lineTo(px-ux*len,py-uy*len);c.stroke()}c.restore()}
+  function whoosh(c,g){c.save();c.lineCap="round";for(const k of[5,7]){const p0=joints(g)[k],p1=joints(g-30)[k],sp=Math.hypot(p0[0]-p1[0],p0[1]-p1[1])/30;if(sp<.3)continue;
+   let prev=p0;for(let i=1;i<=6;i++){const p=joints(g-i*20)[k];c.strokeStyle="rgba(236,246,255,"+(.55*(1-i/7)*Math.min(1,sp/.9))+")";c.lineWidth=lw*.9*(1-i/7);c.beginPath();c.moveTo(prev[0],prev[1]);c.lineTo(p[0],p[1]);c.stroke();prev=p}}c.restore()}
+  function cracks(c,g,X,Y,T0,M){const age=g-T0;if(age<0||age>900)return;const u=Math.min(1,age/260),a=1-Math.max(0,(age-500)/400);c.save();c.lineCap="round";c.lineJoin="round";
+   for(let i=0;i<9;i++){let th=-3.14+i*.7854+hash(i)*.4,x=X,y=Y+lw*.6;const n=5,L=(30+hash(i+9)*50)*sc*u*M/n;
+    for(const[col,wd]of[["rgba(3,4,5,"+a+")",1],["rgba(236,246,255,"+a*.8+")",.4]]){c.strokeStyle=col;c.lineWidth=Math.max(1,lw*.3*wd);c.beginPath();let px=x,py=y;c.moveTo(px,py);
+     for(let j=0;j<n;j++){th+=(hash(i*13+j)-.5)*.9;px+=Math.cos(th)*L;py+=Math.sin(th)*L;c.lineTo(px,py)}c.stroke();th=-3.14+i*.7854+hash(i)*.4}}c.restore()}
+  function aura(c,g){const u=sm(B1+1000,B2-120,g);if(u<=0||g>B2+60)return;const p=joints(g)[7],R=lw*(1.2+6*u),gr=c.createRadialGradient(p[0],p[1],0,p[0],p[1],R);
+   gr.addColorStop(0,"rgba(255,255,255,"+.9*u+")");gr.addColorStop(.35,"rgba(127,220,200,"+.55*u+")");gr.addColorStop(1,"rgba(127,220,200,0)");c.save();c.fillStyle=gr;c.beginPath();c.arc(p[0],p[1],R,0,7);c.fill();
+   c.lineCap="round";c.strokeStyle="rgba(214,255,244,"+.7*u+")";c.lineWidth=1.6;for(let i=0;i<14;i++){const ph=(g*.0035+hash(i)*3)%1,r0=R*(2.4-1.9*ph),r1=r0*.72,th=i*.4488+hash(i+4);c.beginPath();c.moveTo(p[0]+Math.cos(th)*r0,p[1]+Math.sin(th)*r0);c.lineTo(p[0]+Math.cos(th)*r1,p[1]+Math.sin(th)*r1);c.stroke()}c.restore()}
+  function bars(c,g){const h=H*.075*sm(150,650,g)*(1-sm(TL.G+200,TL.F,g));if(h<=0)return;c.fillStyle="#000";c.fillRect(0,0,W,h);c.fillRect(0,H-h,W,h)}
+  return{path,sc,joints,
+   draw(c,g){c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,W,H);if(g>TL.G+1500)return;
+    c.save();if(g>TL.G){const tg=g-TL.G;c.translate(0,1.2*(tg-450*(1-Math.exp(-tg/450))))}
+    for(const L of lands){const a=g-L.g;if(a>0&&a<620){const u=a/620;for(let k=0;k<6;k++){const d=k<3?-1:1,r=(k%3);c.fillStyle="rgba(190,205,220,"+(.22*(1-u))+")";c.beginPath();c.arc(L.x+d*(8+u*(40+r*16))*sc*.5,L.y-u*(10+r*6)*sc*.5,(3.2+r*1.6+u*5)*sc*.5,0,7);c.fill()}}}
+    {const HT=[TL.imp,4850,B1,B2],z=1+.09*Math.max(...HT.map(T=>g>T?Math.exp(-(g-T)/170):0)),am=Math.max(...HT.map(T=>g>T?Math.exp(-(g-T)/140):0))*9*sc/2.4,f=Math.floor(g/30);c.translate(W/2,H/2);c.scale(z,z);c.translate(-W/2+(hash(f)-.5)*2*am,-H/2+(hash(f+77)-.5)*2*am)}
+   speedLines(c,g);cracks(c,g,hl[0],hl[1],4850,1);cracks(c,g,hx,hy,TL.imp,1.8);figure(c,g-135,.06,false);figure(c,g-90,.12,false);figure(c,g-45,.25,false);aura(c,g);figure(c,g,1,true);whoosh(c,g);for(const h of HITS)burst(c,h[0],h[1],g-h[2],h[3],h[4]);for(const j of JBS){const p=joints(j[0])[j[1]];burst(c,p[0],p[1],g-j[0],170,.65)}c.restore();
+   {let a=0;for(const T of[TL.imp,B1,B2])if(g>T)a=Math.max(a,Math.exp(-(g-T)/260));if(a>.01){const v=c.createRadialGradient(W/2,H/2,Math.min(W,H)*.25,W/2,H/2,Math.hypot(W,H)*.6);v.addColorStop(0,"rgba(240,163,94,0)");v.addColorStop(1,"rgba(240,163,94,"+a*.4+")");c.fillStyle=v;c.fillRect(0,0,W,H)}}
+   bars(c,g)}}}
+
+ // "TASTE RADAR" beside (or under) the sentinel; returns the y where the accent word begins
+ function wordmark(c,res){const x=c.x,tall=H>W*1.05;x.fillStyle="#fff";try{x.fontStretch="extra-condensed"}catch(_){}
+  const bf=s=>"850 "+s+"px Archivo, 'Arial Narrow', sans-serif";x.font=bf(100);const w100=x.measureText("RADAR").width||300;
+  const zx=tall?W*.08:Math.max(res.box[2]+W*.04,W*.64),zw=tall?W*.84:W*.97-zx,big=Math.min(zw/w100*100,tall?H*.12:H*.2),small=Math.max(20,big*.34),
+   zy=tall?res.box[3]+H*.06:H/2-(small+big*1.75)/2;
+  x.font="italic 300 "+small+"px 'Cormorant Garamond', Cormorant, Georgia, serif";x.textAlign="left";x.fillText("welcome to",zx,zy+small*.8);
+  x.font=bf(big);const y1=zy+small*1.3+big*.82,y2=y1+big*.9;x.fillText("TASTE",zx,y1);x.fillText("RADAR",zx,y2);return y2-big*.8}
+ // deal n shards onto a character's layers: dark glass, lit edges, mint glow (and the wordmark)
+ function scene(res,n,text){const L=res.L,parts=text?[[L.fill,.34,()=>2],[L.edge,.24,()=>1],[L.glow,.16,()=>3]]:[[L.fill,.42,()=>2],[L.edge,.3,()=>1],[L.glow,.28,()=>3]];
+  if(text){const thr=wordmark(L.text,res);parts.push([L.text,.28,(px,py)=>py>=thr?3:0])}
+  const out=[];let left=n;parts.forEach(([c,f,r],i)=>{const k=i===parts.length-1?left:Math.round(n*f),pts=inkPoints(c.x,k,r)||[];out.push(...pts);left-=k});
+  while(out.length<n)out.push(out[Math.floor(rnd()*out.length)]||[W/2,H/2,.3,2]);return out.slice(0,n)}
+ function start(x,y){if(phase!=="idle")return;phase="go";{let hx0=x,hy0=y;if(!ACT){const wr=words.getBoundingClientRect();if(wr.width){hx0=wr.left+wr.width/2;hy0=wr.top+wr.height/2}}hit=toW(hx0,hy0);start.h=[hx0,hy0]}removeEventListener("keydown",onKey);cv.style.cursor="default";
+  if(!ACT&&RMO)words.classList.add("gone");if(RMO){phase="rm";cv.style.transition="opacity .4s";cv.style.opacity="0";revealQuestion();setTimeout(()=>{cv.remove();ov.remove();words.remove()},450);return}
+  // give every shard a place in the welcome and a place on the question page, in no particular order
+  const n=fine.length,fig=ACT?leaper():null,Wt=ACT?scene(fig,n,false):(welcome(n)||fine.map(f=>[W/2+f.c[0]*.2,H/2-f.c[1]*.2,.3,0])),Qt=landing()||Wt.map(p=>[p[0],p[1],p[2],0]);
+  if(ACT){beam=[0,0,1.3,2];palm=toW(...fig.centre);palmPx=fig.centre}else{const tp=welcome.taste||[W*.4,H/2];beam=[0,0,0,3];palm=toW(tp[0],tp[1]);palmPx=tp;story=makeStory(start.h[0],start.h[1],tp,welcome.radar||[W*.75,H/2])}
+  const ia=shuffle([...Array(n).keys()]),ib=shuffle([...Array(n).keys()]);
+  const A=new Float32Array(fineCount*4),B=new Float32Array(fineCount*4);
+  fine.forEach((f,j)=>{const a=Wt[ia[j]],b=Qt[ib[j]],wa=toW(a[0],a[1]),wb=toW(b[0],b[1]);
+   for(let v=f.start;v<f.start+f.count;v++){A.set([wa[0],wa[1],a[2],a[3]],v*4);B.set([wb[0],wb[1],b[2],b[3]],v*4)}});
+  if(ACT){const F2=layout.F;fine.forEach((f,j)=>{const b=Qt[ib[j]],wb=toW(b[0],b[1]);for(let v=f.start;v<f.start+f.count;v++){F2[v*12+6]=wb[0];F2[v*12+7]=wb[1]}});gl.bindBuffer(gl.ARRAY_BUFFER,fbo);gl.bufferData(gl.ARRAY_BUFFER,F2,gl.STATIC_DRAW)}
+  gl.bindBuffer(gl.ARRAY_BUFFER,wbo);gl.bufferData(gl.ARRAY_BUFFER,A,gl.STATIC_DRAW);gl.bindBuffer(gl.ARRAY_BUFFER,tbo);gl.bufferData(gl.ARRAY_BUFFER,B,gl.STATIC_DRAW);
+  t0=gnow();
+  if(!ACT){skipEl=document.createElement("div");skipEl.textContent="tap to skip";skipEl.style.cssText="position:fixed;left:0;right:0;bottom:16px;text-align:center;font:500 10px/1 ui-monospace,monospace;letter-spacing:.28em;text-transform:uppercase;color:rgba(255,255,255,.34);pointer-events:none;z-index:2147483000;opacity:0;transition:opacity .6s";document.body.appendChild(skipEl);setTimeout(()=>{if(skipEl)skipEl.style.opacity="1"},800)}}
+
+ // ---- the camera: swings away while the shards scatter, comes back to the one view where they line up ----
+ const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],
+  nrm=a=>{const l=Math.hypot(...a)||1;return[a[0]/l,a[1]/l,a[2]/l]};
+ function lookAt(e,up){const z=nrm(e),x=nrm(cross(up,z)),y=cross(z,x);
+  return new Float32Array([x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0, -dot(x,e),-dot(y,e),-dot(z,e),1])}
+ const eo=u=>1-Math.pow(1-u,3),eio=u=>u<.5?4*u*u*u:1-Math.pow(-2*u+2,3)/2,cl=u=>Math.max(0,Math.min(1,u));
+ // the blast lights the whole screen like a flash going off (the first picture: black shards on white); the page
+ // goes dark again as the pieces come back together (the second picture)
+ const pulse=(t,a,rise,hold,fall,pk)=>t<a?0:t<a+rise?pk*eo(cl((t-a)/rise)):t<a+rise+hold?pk:pk*(1-eio(cl((t-a-rise-hold)/fall)));
+ const bgLight=t=>Math.max(0);
+ // hit-stop: time crawls for a moment after each blast, then snaps back; WT maps real ms to animation ms
+ const sm=(a,b,x)=>{const u=cl((x-a)/(b-a));return u*u*(3-2*u)};
+ const slow=A=>{const bm=(a,b)=>sm(a,a+90,A)*(1-sm(b-220,b,A));return(1-.76*Math.max(bm(TL.imp+70,TL.imp+560),bm(TL.B+70,TL.B+560))-.45*sm(TL.imp-340,TL.imp-250,A)*(1-sm(TL.imp-60,TL.imp,A))-(ACT?0:.5)*bm(TL.B2+40,TL.B2+420))*(ACT?1:1+.9*sm(TL.B2+450,TL.B2+900,A))};   // the closing reassembly plays faster; the action keeps its pace
+ let WT=null;const warp=r=>{if(!WT){WT=new Float32Array(13000);let A=0;for(let i=0;i<WT.length;i++){WT[i]=A;A+=2*slow(A)}}
+  const f=Math.min(WT.length-2,Math.max(0,r/2)),i=Math.floor(f);return WT[i]+(WT[i+1]-WT[i])*(f-i)};
+ const glitchAt=t=>{const ge=(a,d,k)=>t>a&&t<a+d?k:0,r1=TL.asm+TL.sweep+TL.fly,r2=TL.asm2+TL.sweep+TL.fly;
+  return Math.max(t>TL.imp?.85*Math.exp(-(t-TL.imp)/170):0,t>TL.B?.85*Math.exp(-(t-TL.B)/170):0,ge(r1-60,150,.7),ge(r2-60,150,ACT?0:.7),ge(r1+420,70,.5),ge(TL.B-260,70,.55),story?Math.max(t>TL.B2?.6*Math.exp(-(t-TL.B2)/200):0,ge(TL.G-80,160,.4)):0)};
+ function camera(t){let yaw=0,pit=0,dol=1,rol=0;const tall=H>W*1.05;
+  const swing=(a,b,c,Y,P)=>{if(t<=a||t>=c)return;const k=t<b?eo(cl((t-a)/(b-a))):1-eio(cl((t-b)/(c-b)));yaw+=Y*k;pit+=P*k;dol+=.3*k;rol+=Y*.1*k};
+  const r1=TL.asm+TL.sweep+TL.fly,r2=ACT?TL.B+700:TL.asm2+TL.sweep+TL.fly;
+
+  // each blast kicks the camera
+  for(const b of story?[TL.imp,TL.B,TL.B2]:[TL.imp,TL.B])if(t>b){const q=t-b;rol+=.07*Math.sin(q*.03)*Math.exp(-q/170)}
+  const R=camZ*dol,e=[Math.sin(yaw)*Math.cos(pit)*R,Math.sin(pit)*R,Math.cos(yaw)*Math.cos(pit)*R];
+  return{e,V:lookAt(e,[Math.sin(rol),Math.cos(rol),0])}}
+
+ // ---- per-frame ----
+ let wgone=false,last=gnow(),shown=false,faded=false,hid=false,go0=true;const P=()=>M.persp(FOV,W/H,10,camZ*6);
+ function frame(){if(phase==="rm"||phase==="done")return;const now=gnow(),dt=Math.min(.05,Math.max(0,(now-last)/1000));last=now;
+  const t=phase==="idle"?0:warp((now-t0)*(ACT?1.5:1.9)); // the whole opening plays faster: about 6 s instead of 12
+  // the real question page fades in exactly under the glass that has just drawn it, then the glass clears
+  if(!ACT&&t>TL.show&&!shown){shown=true;revealQuestion()}
+  if(!ACT&&t>TL.fade&&!faded){faded=true;cv.style.transition="opacity .45s ease";cv.style.opacity="0"}
+  if(!ACT&&phase==="go"&&t>=TL.imp-40&&!wgone){wgone=true;words.classList.add("gone")}
+  const cam=camera(t),vp=M.mul(P(),cam.V);
+  gl.useProgram(prog);gl.bindFramebuffer(gl.FRAMEBUFFER,post?msF:null);gl.enable(gl.DEPTH_TEST);
+  gl.viewport(0,0,cv.width,cv.height);gl.uniform1f(U.uLite,0);gl.clearColor(.043,.051,.063,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.uniformMatrix4fv(U.uVP,false,vp);gl.uniform3f(U.uCam,...cam.e);gl.uniform1f(U.uEnv,phase==='idle'?1:1.35);gl.uniform2f(U.uHit,hit[0],hit[1]);
+  const e=1-Math.exp(-dt/.35),tx=ptr&&phase==="idle"?((ptr[0]/W)*2-1)*3:0,ty=ptr&&phase==="idle"?((ptr[1]/H)*2-1)*2.2:0;
+  tilt.x+=(tx*Math.PI/180-tilt.x)*e;tilt.y+=(ty*Math.PI/180-tilt.y)*e;const Gt=M.mul(M.ry(tilt.x),M.rx(tilt.y)); // the sheet leans very slightly with the mouse
+  const waveR=phase==="idle"?0:Math.max(0,t-TL.imp)*TL.speed;gl.uniform1f(U.uWaveR,waveR);
+  if(!ACT&&waveR<Math.hypot(W,H)+40){gl.bindVertexArray(vao);gl.uniform1i(U.uMode,0);
+   for(const s of shards){gl.uniformMatrix4fv(U.uModel,false,M.mul(Gt,M.tr(s.c[0],s.c[1],0)));gl.drawArrays(gl.TRIANGLES,s.start,s.count)}}
+  if(phase==="go"){gl.bindVertexArray(fvao);gl.uniform1i(U.uMode,1);gl.uniformMatrix4fv(U.uG,false,Gt);gl.uniform1f(U.uT,t);gl.uniform1f(U.uSpeed,TL.speed);
+   gl.uniform1f(U.uZ0,G.depth/2-HF);gl.uniform1f(U.uCamZ,camZ);gl.uniform4f(U.uP,TL.asm,TL.sweep,TL.fly,TL.settle);gl.uniform4f(U.uQ,TL.B,TL.asm2,W,H);if(story){const rw=toW(...(welcome.radar||[W*.75,H/2]));gl.uniform4f(U.uS,TL.B,TL.B2,TL.G,TL.F);gl.uniform4f(U.uR,rw[0],rw[1],H/2-(welcome.thr||0),0)}gl.uniform1f(U.uStart,ACT?1:0);gl.uniform1f(U.uImp,TL.imp);gl.uniform1f(U.uStory,story?1:0);if(story)gl.uniform2fv(U.uPath,story.path);gl.uniform4f(U.uBeam,beam[0],beam[1],beam[2],beam[3]);gl.uniform2f(U.uPalm,palm[0],palm[1]);
+   gl.drawArrays(gl.TRIANGLES,0,fineCount)}
+  if(phase==="go"&&story&&octx)story.draw(octx,t);
+  if(post){const w=cv.width,h=cv.height,go=phase==="go";
+   gl.bindFramebuffer(gl.READ_FRAMEBUFFER,msF);gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER,rsF);gl.blitFramebuffer(0,0,w,h,0,0,w,h,gl.COLOR_BUFFER_BIT,gl.NEAREST);
+   gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,w,h);gl.disable(gl.DEPTH_TEST);gl.useProgram(pp);gl.bindVertexArray(pvao);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,rTex);
+   gl.uniform1i(PU.uTex,0);gl.uniform2f(PU.uRes,w,h);gl.uniform1f(PU.uAsp,W/H);gl.uniform1f(PU.uT,t);gl.uniform1f(PU.uFall,go&&story?sm(TL.G,TL.G+500,t)*(1-sm(TL.F+200,TL.F+1400,t)):0);
+   gl.uniform2f(PU.uH1,(hit[0]+W/2)/W,(hit[1]+H/2)/H);gl.uniform2f(PU.uH2,(palm[0]+W/2)/W,(palm[1]+H/2)/H);
+   const fl=go?((t>TL.imp?Math.exp(-(t-TL.imp)/65)*.8:0)+(t>TL.B?Math.exp(-(t-TL.B)/65)*.7:0)+(story&&t>TL.B2?Math.exp(-(t-TL.B2)/70)*.5:0)):0;
+   gl.uniform4f(PU.uE,go&&t>=TL.imp?(t-TL.imp)/1000:-1,go&&t>TL.B?(t-TL.B)/1000:-1,fl,go?glitchAt(t):0);
+   gl.drawArrays(gl.TRIANGLES,0,3);gl.enable(gl.DEPTH_TEST)}
+  if(ACT&&go0&&!hid){hid=true;opts.onStart&&opts.onStart()}
+  if(ACT&&phase==="go"&&t>TL.B+70){if(!shown){shown=true;opts.onReveal&&opts.onReveal()}
+   const k=cl((t-TL.B-70)/1000),R=Math.hypot(W,H)*.75*(1-Math.pow(1-k,3)),m=`radial-gradient(circle at ${palmPx[0]}px ${palmPx[1]}px, transparent ${R}px, #000 ${R+110}px)`;cv.style.webkitMaskImage=m;cv.style.maskImage=m}
+  if(phase==="go"&&t>TL.end){phase="done";if(skipEl)skipEl.remove();cv.remove();ov.remove();words.remove();opts&&opts.done&&opts.done();return}
+  requestAnimationFrame(frame)}
+
+ // skip: a click or key once the story is under way jumps to the question page
+ let skipEl=null;
+ function skipNow(){if(ACT||phase!=="go"||gnow()-t0<500)return;phase="rm";if(!shown){shown=true;revealQuestion()}if(skipEl){skipEl.remove();skipEl=null}
+  cv.style.transition="opacity .5s ease";cv.style.opacity="0";ov.style.transition="opacity .5s ease";ov.style.opacity="0";setTimeout(()=>{cv.remove();ov.remove();words.remove();opts&&opts.done&&opts.done()},560)}
+ addEventListener("keydown",e=>{if(phase==="go"&&!ACT&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&e.key!=="Tab")skipNow()});
+ // ---- input: one click, tap or key; nothing else on screen ----
+ cv.addEventListener("pointermove",e=>{if(e.pointerType==="mouse")ptr=[e.clientX,e.clientY]});
+ cv.addEventListener("pointerleave",()=>{ptr=null});
+ if(!ACT)cv.addEventListener("pointerdown",e=>{if(phase==="idle")start(e.clientX,e.clientY);else skipNow()});
+ const onKey=e=>{if(e.key==="Tab"||e.metaKey||e.ctrlKey||e.altKey)return;e.preventDefault();start(innerWidth/2,innerHeight/2)};if(!ACT)addEventListener("keydown",onKey);
+ addEventListener("resize",()=>{if(phase==="idle")layout()});
+ window.__glass=()=>({phase,t:Math.round(phase==="idle"?0:gnow()-t0),pieces:shards.length,shards:fine.length});
+ layout();if(!ACT)cv.focus({preventScroll:true});if(ACT)start(opts.x,opts.y);requestAnimationFrame(frame);
+}
+// The question: the second chapter, in the same glass language.
+function choose(){
+ const w=el("div",null,"q2");
+ const h=el("h1",null,"serifq");h.append(document.createTextNode("How much would you like to "),el("em","tell us"),document.createTextNode("?"));
+ w.append(el("div","Before we begin","eyebrow"),h,el("p","This shapes how we learn your taste. You can change it later.","qsub"));
+ const panes=el("div",null,"panes");
+ const pane=(id,word,meta,body)=>{const b=el("button",null,"pane");b.append(el("span",meta,"pm"),el("span",word,"pw"),el("span",body,"pd"));
+  b.onclick=e=>{e.stopPropagation();if(w.dataset.done)return;w.dataset.done=1;S.depth=id;save();b.classList.add("chosen");
+   const r=b.getBoundingClientRect();glassEmerge(r.left+r.width/2,r.top+r.height/2)};return b};
+ panes.append(pane("quick","Quick","5 questions · about a minute","One tap per title: loved, liked, meh or disliked."),
+  pane("detailed","Detailed","10 questions · about 2 minutes","A deep dive: what you love, how you want to feel, the themes that hit you, what you can’t stand."));
+ w.append(panes);return w;
+}
+// Page two to the site: the question page shatters, the shards pull together into a diving acrobat, which
+// leaps through the screen; the site is revealed where it landed.
+function glassEmerge(x,y){
+ if(RMO||!window.WebGL2RenderingContext){emerge(x,y);return}
+ const ov=$("#intro");
+ moshi({act2:true,x,y,onStart(){ov.style.visibility="hidden"},
+  onReveal(){ov.style.visibility="";ov.hidden=true;ov.replaceChildren();document.body.classList.remove("intro");render();if(MZ.swoop)MZ.swoop()},
+  fallback(){emerge(x,y)}})}
+// Into the site: the chosen pane becomes the opening. The dark clears outward from it while the
+// poster sphere swoops in and settles.
+function emerge(x,y){
+ const ov=$("#intro"),cur=ov.cloneNode(true);cur.removeAttribute("id");cur.classList.add("curtain");document.body.append(cur);
+ ov.hidden=true;ov.replaceChildren();document.body.classList.remove("intro");render();if(MZ.swoop)MZ.swoop();
+ if(RMO){cur.style.transition="opacity .35s";requestAnimationFrame(()=>cur.style.opacity="0");setTimeout(()=>cur.remove(),400);return}
+ const R=Math.hypot(Math.max(x,innerWidth-x),Math.max(y,innerHeight-y))+120,D=1250;let t0=0;
+ cur.style.webkitMaskImage=cur.style.maskImage=`radial-gradient(circle at ${x}px ${y}px, transparent 0px, #000 90px)`;
+ // start the clock only once the site underneath has been drawn, so the opening is seen from its first moment
+ const step=now=>{if(!t0)t0=now;const k=Math.min(1,(now-t0)/D),e=1-Math.pow(1-k,3),r=e*R,m=`radial-gradient(circle at ${x}px ${y}px, transparent ${r}px, #000 ${r+90}px)`;
+  cur.style.webkitMaskImage=m;cur.style.maskImage=m;if(k<1)requestAnimationFrame(step);else cur.remove()};
+ requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(step)));
+}
+
+// ---------- Step 1: learn the person's taste ----------
+const FIRST={game:["The Witcher 3","Minecraft","Portal 2","Fortnite","Red Dead Redemption 2"],movie:["Inception","Avengers: Endgame","Dangal","Parasite","Coco"]};
+async function moreTitles(t){
+ const s=await ask();if(!s)return false;
+ const have=allS(t).map(r=>r[0]).concat(S.skip[t]).join("; ");
+ const p=`List 6 very well-known, varied ${t==="game"?"video games":"movies or TV shows"} that a typical person may have ${t==="game"?"played":"watched"}. Do not include: ${have}. For each give 0-10 consensus scores in this category order (${CATS[t].join("; ")}), calibrated like these references:\n${anchors(t)}\nJSON only: {"items":[{"title":"","year":2020,"scores":[7,7,7,7,7]}]}`;
+ try{const r=await s.json(p,{modelTier:"quick",cache:false});
+  const add=(r.items||[]).filter(x=>x&&x.title&&Array.isArray(x.scores)&&x.scores.length===CATS[t].length).map(x=>[String(x.title),x.year||"",...x.scores.map(clamp)]);
+  add.forEach(x=>{if(!allS(t).some(y=>y[0]===x[0]))S.dyn[t].push(x)});save();return add.length>0}catch(e){return false}
+}
+function calib(){
+ document.body.classList.add("calib");$("#dock").hidden=true;$("#ask").hidden=true;$("#hint").hidden=true;$("#intro").hidden=true;
+ if(S.depth==="detailed"&&!S.demo)return deep();
+ const a=$("#app");a.hidden=false;a.replaceChildren();
+ const t=S.type,taps=S.taps[t],pl=t==="game"?"played":"watched",detailed=S.depth==="detailed",NEED=detailed?0:5;
+ S.extra[t]=S.extra[t]||[];S.why=S.why||{game:{},movie:{}};
+ if(!S.slots[t].length)S.slots[t]=FIRST[t].slice();
+ let i=0,mode=detailed?(S.calMode==="search"?"search":"sphere"):(S.calMode||"survey"),picked=null,qtext="";
+ const PEND=new Map(); // ratings for titles still being looked up
+ const box=el("div",null,"sec"),go=el("button",null,"btn go");
+ const tabs=el("div",null,"seg calseg"),tabB=Object.assign(detailed?{}:{survey:el("button","Answer the survey")},{sphere:el("button","Pick from the sphere"),search:el("button","Search")});
+ Object.values(tabB).forEach(b=>tabs.append(b));
+ const hint=el("div","","mut"),sw=el("button",detailed?"Switch to quick taps":"Switch to detailed rating","ghost tiny");
+ sw.onclick=()=>{S.depth=detailed?"quick":"detailed";save();calib()};
+ const top=el("div",null,"row between");top.append(el("div",detailed?"Deep dive · 1 of "+DEEPN:"Taste check · "+(t==="game"?"games":"movies & shows"),"eyebrow"),sw);
+ const head=el("div",null,"sec");head.append(top);if(detailed)head.append(el("div","Anything you’ve "+pl+"?","disp pq"));head.append(tabs,hint);
+ const foot=el("div",null,"sec");foot.append(go);
+ a.append(head,box,foot);
+
+ const left=()=>WALL[t].concat((S.dyn[t]||[]).map(r=>r[0])).filter(n=>!S.slots[t].includes(n)&&!S.skip[t].includes(n)&&!isRated(n));
+ const isRated=n=>!!taps[n]||S.extra[t].some(e=>e.n===n)||PEND.has(n);
+ const rated=()=>{const m=new Map();Object.entries(taps).forEach(([n,l])=>m.set(n,{n,l}));S.extra[t].forEach(e=>m.set(e.n,{n:e.n,l:rlev(e.r)}));PEND.forEach((v,n)=>m.set(n,{n,l:v,wait:1}));return[...m.values()]};
+ const upd=()=>{const n=rated().length;
+  if(detailed){go.textContent=n?"Next ("+n+" rated)":"Skip for now";go.disabled=false;return}
+  go.textContent=PEND.size&&n>=NEED?"Adding your last pick…":"See my taste ("+n+(n<NEED?" of "+NEED:"")+" rated)";
+  go.disabled=PEND.size>0&&n>=NEED||n<3||(n<NEED&&left().length>0)};
+
+ // Save one rating. val is a reaction ("loved"...) in quick mode, or five scores in detailed mode.
+ const record=(nm,val)=>{const quick=typeof val==="string",row=allS(t).find(x=>x[0]===nm);
+  if(row){if(quick){taps[nm]=val;S.extra[t]=S.extra[t].filter(e=>e.n!==nm)}
+   else{delete taps[nm];S.extra[t]=S.extra[t].filter(e=>e.n!==nm).concat({n:nm,s:row.slice(2),r:avg(val),u:val})}
+   save();syncMosaic();return}
+  // Not in our catalog: keep the rating now and look the title up in the background.
+  PEND.set(nm,quick?val:rlev(avg(val)));
+  fetchScores(nm).then(res=>{PEND.delete(nm);
+   if(res&&res.known){const r=quick?LV[val]:avg(val);S.extra[t]=S.extra[t].filter(e=>e.n!==res.title&&e.n!==nm).concat(Object.assign({n:res.title,s:res.sc.map(x=>x.s),r},quick?{}:{u:val}));save();syncMosaic()}
+   else $("#st").textContent="Couldn’t add "+nm+" (I don’t know it well enough, or the AI is busy). Try another title.";
+   upd();if(!picked)draw()})};
+
+ // The rating control: four taps in quick mode, five sliders in detailed mode.
+ const rater=(nm,done)=>{const w=el("div",null,"rater");
+  {const cur=taps[nm]||((S.extra[t].find(e=>e.n===nm)||{}).r!=null?rlev(S.extra[t].find(e=>e.n===nm).r):null);
+   const bs=el("div",null,"react");Object.keys(LV).forEach(l=>{const b=rbtn(l,cur===l?"on":"");b.onclick=()=>{record(nm,l);done()};bs.append(b)});w.append(bs);return w}
+ };
+
+ const chips=()=>{const mine=rated(),w=el("div",null,"picks");
+  if(!mine.length){w.append(el("div","Nothing rated yet.","mut"));return w}
+  const ch=el("div",null,"chips");mine.forEach(x=>{const c=el("span",null,"chip mine"+(x.wait?" wait":""));c.append(ic(RI[t][x.l],14),document.createTextNode(" "+x.n+(x.wait?" …":"")));ch.append(c)});
+  w.append(el("div","Your ratings ("+mine.length+")","eyebrow"),ch);return w};
+
+ window.CALPICK=n=>{picked=n;draw()}; // Enter on the sphere (or a tap on a phone)
+ const drawPicked=()=>{HOT=picked;syncMosaic();MZ.focus(picked);
+  const row=allS(t).find(x=>x[0]===picked),hd=el("div");
+  hd.append(el("div",(mode==="search"?"From your search":"Picked from the sphere")+(row&&row[1]?" · "+row[1]:""),"eyebrow"),el("div",picked,"disp ctitle"));
+  const back=el("button","Cancel","ghost skip");back.onclick=()=>{picked=null;draw()};
+  box.append(hd,rater(picked,()=>{picked=null;upd();draw()}),back)};
+ const drawSurvey=()=>{const sl=S.slots[t],nm=sl[i],r=allS(t).find(x=>x[0]===nm)||[nm,""];HOT=nm;syncMosaic();MZ.focus(nm);
+  const dots=el("div",null,"dots");sl.forEach((n,j)=>{const done=isRated(n),d=el("button",done?null:String(j+1),"dot"+(j===i?" on":"")+(done?" done":""));
+   if(done){const x=rated().find(q=>q.n===n);if(x)d.append(ic(RI[t][x.l],16))}d.setAttribute("aria-label","Title "+(j+1)+": "+n);d.onclick=()=>{i=j;draw()};dots.append(d)});
+  const hd=el("div");hd.append(el("div",r[1]?String(r[1]):"","eyebrow"),el("div",nm,"disp ctitle"));
+  const sk=el("button",null,"ghost skip");sk.append(ic(t==="game"?"sadgame":"sadmovie",22),document.createTextNode(" "+(t==="game"?"Not played":"Not seen")));
+  sk.onclick=async()=>{delete taps[nm];S.extra[t]=S.extra[t].filter(e=>e.n!==nm);S.skip[t].push(nm);let n2=left()[0];
+   if(!n2){$("#st").textContent="Finding more titles…";if(await moreTitles(t))n2=left()[0];$("#st").textContent=""}
+   if(n2)S.slots[t][i]=n2;else $("#st").textContent="Couldn’t fetch new titles right now. Rate the ones you know, or try the sphere or search.";save();upd();draw()};
+  box.append(dots,hd,rater(nm,()=>{upd();i=Math.min(i+1,sl.length-1);draw()}),sk)};
+ const drawSphere=()=>{HOT=null;syncMosaic();MZ.focus(null);box.append(chips())};
+ const drawSearch=()=>{HOT=null;syncMosaic();
+  const inp=el("input");inp.id="calq";inp.className="calsearch";inp.autocomplete="off";inp.value=qtext;inp.placeholder="Search any "+(t==="game"?"game":"movie or show");inp.setAttribute("aria-label","Search titles to rate");
+  const res=el("div",null,"results");
+  const show=()=>{qtext=inp.value;const q=inp.value.trim().toLowerCase();res.replaceChildren();if(!q)return;
+   const names=[...new Set(WALL[t].concat(allS(t).map(r=>r[0])))],hits=names.filter(n=>n.toLowerCase().includes(q)).slice(0,6);
+   hits.forEach(n=>{const y=(allS(t).find(r=>r[0]===n)||[])[1],b=el("button",null,"res");b.append(el("span",n,"rn"),el("span",(isRated(n)?"rated · ":"")+(y||""),"mut"));b.onclick=()=>{picked=n;draw()};res.append(b)});
+   if(!hits.some(n=>n.toLowerCase()===q)){const v=inp.value.trim(),b=el("button",null,"res any");b.append(el("span","Rate “"+v+"”","rn"),el("span","we’ll look it up","mut"));b.onclick=()=>{picked=v;draw()};res.append(b)}};
+  inp.oninput=show;inp.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();const f=res.querySelector("button");if(f)f.click()}};
+  box.append(inp,res,chips());show();setTimeout(()=>inp.focus(),30)};
+ const draw=()=>{box.replaceChildren();if(picked)return drawPicked();({survey:drawSurvey,sphere:drawSphere,search:drawSearch})[mode]()};
+ const HINTS={survey:"One title at a time. Haven’t "+pl+" it? Tap “"+(t==="game"?"Not played":"Not seen")+"” and we’ll swap it."+(detailed?" After 5, a few quick this-or-that picks.":""),
+  sphere:"Use the arrow keys to move around the sphere and press Enter to rate a poster you’ve "+pl+". "+(detailed?"Rate as many or as few as you like, or skip this step.":"Rate at least "+NEED+"."),
+  search:"Search for anything you’ve "+pl+" and rate it. "+(detailed?"Rate as many or as few as you like, or skip this step.":"Rate at least "+NEED+".")};
+ const setMode=m=>{mode=m;S.calMode=m;save();picked=null;for(const k in tabB)tabB[k].className=k===m?"on":"";hint.textContent=HINTS[m];
+  document.body.classList.toggle("calwall",m!=="survey");draw()};
+ for(const k in tabB)tabB[k].onclick=()=>setMode(k);
+ go.onclick=()=>{HOT=null;document.body.classList.remove("calwall");if(detailed)return deep();S.done[t]=1;save();render()};
+ setMode(tabB[mode]?mode:detailed?"sphere":"survey");upd();
+ const d=el("button","Just looking? Try a demo profile","ghost");d.onclick=()=>{S.demo=true;save();HOT=null;render()};foot.append(d);
+}
+
+// ---------- Detailed mode: its own deep dive, none of it shared with the quick taps ----------
+// One title you loved and one you didn't (both picked on the sphere, both skippable), then what matters
+// most, pace, depth, feeling, themes, setting, a loose leaning on length and what you can't stand.
+// Those are matched against the same traits the AI tags on every title you check.
+const FLAV={game:["Gameplay that feels like a dream","A story you can’t stop thinking about","Every frame looks like a wallpaper","A soundtrack you’ll keep humming","A world you get completely lost in"],
+ movie:["Characters and a plot that grip you","So immersive you forget you’re watching","A score you’ll keep humming","Every frame looks like a wallpaper","Nails its genre perfectly"]};
+const DEAL={game:["Bad gameplay","A weak story","Ugly graphics","Bad sound","A dull world"],movie:["A weak story","Can’t get into it","Bad music","Ugly visuals","Doesn’t feel like its genre"]};
+// the shared vocabulary: what the survey asks and what the AI tags titles with
+const TR={
+ pace:{game:{slow:"Unhurried, let me explore",steady:"A steady build",fast:"Non-stop action"},movie:{slow:"A slow burn that takes its time",steady:"Steady and well paced",fast:"Relentless, edge of the seat"}},
+ depth:{game:{light:"Pick up and play",moderate:"Some thinking along the way",dense:"Deep systems that reward mastery"},movie:{light:"Switch my brain off",moderate:"Some thinking along the way",dense:"Layered, rewards close attention"}},
+ moods:{all:{wonder:"Awe and wonder",tension:"Nail-biting tension",laughter:"Laughing out loud",melancholy:"Bittersweet, a little sad",adrenaline:"Pure adrenaline",comfort:"Cosy comfort",dread:"Creeping dread"}},
+ focus:{game:{solo:"A story I play alone",coop:"Playing with friends",competitive:"Competing to win",sandbox:"Making my own fun"},movie:{ensemble:"A group you grow to love",lead:"One complex lead",villain:"A villain you can’t look away from",plot:"A plot full of turns"}},
+ themes:{all:{family:"Family and friendship",ambition:"Ambition and power",survival:"Survival against the odds",identity:"Finding who you are",justice:"Justice and revenge",love:"Love and romance",mystery:"Mysteries and the unknown",war:"War and history",growing:"Growing up"}},
+ setting:{all:{real:"The real world, today",historical:"The past",scifi:"Science fiction",fantasy:"Fantasy",gritty:"Dark and gritty",stylised:"Bright and stylised"}},
+ length:{game:{short:"Shorter, when I can",medium:"Somewhere in between",long:"Longer, something to sink time into"},movie:{short:"Shorter, when I can",medium:"Somewhere in between",long:"Longer, or a series to binge"}},
+ flags:{game:{grind:"Endless grinding",mtx:"Pay-to-win and microtransactions",gore:"Heavy gore",scares:"Jump scares",slowstart:"A slow start"},movie:{gore:"Heavy gore",sadend:"A crushing sad ending",slowstart:"A slow first hour",scares:"Jump scares",cringe:"Cringe humour"}}};
+const trOpts=(dim,t)=>TR[dim].all||TR[dim][t];
+const deepOf=()=>S.deep&&S.deep[S.type]||null;
+const deepSaid=()=>{const D=deepOf(),P=prefsOf();return!!(P&&P.wins||D&&Object.values(D).some(v=>Array.isArray(v)?v.length:v&&typeof v==="object"?Object.keys(v).length:v))};
+// A short plain-English summary of the deep answers, for the AI prompts.
+function deepText(t){const D=S.deep&&S.deep[t];if(!D)return"";const o=d=>trOpts(d,t),L=(d,v)=>(Array.isArray(v)?v:[v]).filter(x=>x&&o(d)[x]).map(x=>o(d)[x].toLowerCase());
+ const bits=[D.pace&&D.pace!=="any"&&"pace: "+L("pace",D.pace),D.depth&&D.depth!=="any"&&"depth: "+L("depth",D.depth),D.moods&&D.moods.length&&"wants to feel: "+L("moods",D.moods).join(", "),
+  D.focus&&D.focus!=="any"&&"drawn to: "+L("focus",D.focus),D.themes&&D.themes.length&&"themes: "+L("themes",D.themes).join(", "),D.setting&&D.setting.length&&"settings: "+L("setting",D.setting).join(", "),
+  D.length&&D.length!=="any"&&"a loose leaning on length: "+L("length",D.length),D.avoid&&D.avoid.length&&"can’t stand: "+L("flags",D.avoid).join(", "),
+  ...Object.entries(D.other||{}).map(([k,v])=>"in their own words ("+({moods:"feel",focus:"what pulls them in",themes:"themes",setting:"settings",avoid:"can’t stand"}[k]||k)+"): \""+v.replace(/"/g,"'")+"\"")].filter(Boolean);
+ return bits.length?" Their deeper preferences — "+bits.join("; ")+".":""}
+// How a title's traits sit with the deep answers: a small nudge to the match and readable reasons.
+function traitFit(tr,t){const D=S.deep&&S.deep[t];if(!D||!tr||typeof tr!=="object")return{adj:0,notes:[]};
+ const notes=[],o=d=>trOpts(d,t),arr=x=>Array.isArray(x)?x:x?[x]:[];let adj=0;const ord=["slow","steady","fast"],dord=["light","moderate","dense"],lord=["short","medium","long"];
+ const one=(dim,order,want,got,good,bad,gw,bw)=>{if(!want||want==="any"||!got||!o(dim)[got])return;
+  if(got===want){adj+=gw;notes.push({g:1,x:good(o(dim)[got])})}else if(order&&Math.abs(order.indexOf(got)-order.indexOf(want))===2){adj-=bw;notes.push({g:0,x:bad(o(dim)[got],o(dim)[want])})}};
+ one("pace",ord,D.pace,tr.pace,x=>"Paced how you like it: "+x.toLowerCase(),(x,w)=>x+", but you prefer "+w.toLowerCase(),.25,.3);
+ one("depth",dord,D.depth,tr.depth,x=>"The depth you asked for: "+x.toLowerCase(),(x,w)=>x+", but you prefer "+w.toLowerCase(),.2,.25);
+ one("focus",null,D.focus,tr.focus,x=>"Built around what pulls you in: "+x.toLowerCase(),null,.15,0);
+ one("length",null,D.length,tr.length,x=>"Near the length you lean towards",null,.08,0);
+ const many=(dim,want,got,each,cap,txt)=>{const hit=arr(want).filter(x=>arr(got).includes(x)&&o(dim)[x]);if(!hit.length)return;adj+=Math.min(cap,each*hit.length);notes.push({g:1,x:txt(hit.map(x=>o(dim)[x].toLowerCase()).join(" and "))})};
+ many("moods",D.moods,tr.moods,.15,.3,x=>"Brings the feeling you want: "+x);
+ many("themes",D.themes,tr.themes,.12,.3,x=>"Themes you care about: "+x);
+ many("setting",D.setting,tr.setting,.15,.15,x=>"A setting you enjoy: "+x);
+ arr(D.avoid).filter(x=>arr(tr.flags).includes(x)&&o("flags")[x]).forEach(x=>{adj-=.6;notes.push({g:0,x:"Has "+o("flags")[x].toLowerCase()+", one of your dealbreakers"})});
+ return{adj:Math.max(-1.2,Math.min(.8,adj)),notes}}
+// what the AI is asked to tag on every title (same words as the survey)
+const traitAsk=t=>`"traits":{"pace":"${Object.keys(TR.pace[t]).join("|")}","depth":"${Object.keys(TR.depth[t]).join("|")}","moods":[up to 3 of ${Object.keys(TR.moods.all).join(", ")}],"focus":"${Object.keys(TR.focus[t]).join("|")}","themes":[up to 3 of ${Object.keys(TR.themes.all).join(", ")}],"setting":[1 or 2 of ${Object.keys(TR.setting.all).join(", ")}],"length":"${Object.keys(TR.length[t]).join("|")}","flags":[any that clearly apply of ${Object.keys(TR.flags[t]).join(", ")}]}`;
+
+const DEEPN=10;
+let DRAFT=null;  // answers so far, kept while moving back and forth
+function deep(){
+ document.body.classList.add("calib");$("#dock").hidden=true;$("#ask").hidden=true;$("#hint").hidden=true;$("#intro").hidden=true;
+ const t=S.type,a=$("#app"),kind=t==="game"?"game":"movie or show",pl=t==="game"?"played":"watched";a.hidden=false;
+ if(!DRAFT||DRAFT.t!==t)DRAFT={t,q:0,lovedT:null,hatedT:null,rank:[],pace:null,depth:null,moods:[],themes:[],setting:[],length:null,avoid:[],other:{}};
+ const A=DRAFT;
+ // Nothing here is required. A skipped question simply tells us nothing; it never counts against anything.
+ const Q=[
+  {id:"lovedT",pick:"loved",title:"One "+kind+" you really loved",sub:"Find it on the sphere: arrow keys to move, Enter to choose (or tap it). Can’t think of one? Skip."},
+  {id:"hatedT",pick:"disliked",title:"One you didn’t like at all",sub:"Same again, on the sphere. Nothing comes to mind? Skip."},
+  {id:"rank",title:"What makes a "+(t==="game"?"game":"movie")+" great for you?",sub:"Tap in order of importance. Rank as many as you like, or skip."},
+  {id:"pace",title:"How should it move?",sub:"Pick one, or skip.",opts:TR.pace[t]},
+  {id:"depth",title:"How much do you want to think?",sub:"Pick one, or skip.",opts:TR.depth[t]},
+  {id:"moods",title:"How do you want to feel?",sub:"Pick up to three.",opts:TR.moods.all,max:3,other:1},
+  {id:"themes",title:"Which themes hit you hardest?",sub:"Pick as many as you like.",opts:TR.themes.all,max:99,other:1},
+  {id:"setting",title:"Where do you like to be taken?",sub:"Pick as many as you like.",opts:TR.setting.all,max:99,other:1},
+  {id:"length",title:"Any leaning on length?",sub:"Just a leaning. It only nudges suggestions a little, never rules anything out.",opts:TR.length[t],ns:"No leaning, it depends on the "+(t==="game"?"game":"film")},
+  {id:"avoid",title:"Anything that makes you quit a "+(t==="game"?"game":"movie")+"?",sub:"Pick any you can’t forgive. Nothing? Just continue.",deal:1,max:99,other:1}];
+ const finish=()=>{const n=CATS[t].length,r=A.rank;let wins=null;
+  // a partial ranking still says something: ranked ones are placed in order, the rest share the middle
+  if(r.length>=2){const rest=[...Array(n).keys()].filter(k=>!r.includes(k)),mid=rest.length?(n-1-r.length-(rest.length-1)/2):0;
+   wins=[...Array(n)].map((_,k)=>r.includes(k)?n-1-r.indexOf(k):Math.max(0,mid))}
+  if(A.lovedT)S.taps[t][A.lovedT]="loved";if(A.hatedT&&A.hatedT!==A.lovedT)S.taps[t][A.hatedT]="disliked";
+  const deals=A.avoid.filter(x=>typeof x==="number");
+  S.prefs=S.prefs||{};S.prefs[t]={wins,deal:deals.length?deals[0]:-1,deals,done:true};
+  const one=v=>v&&v!=="any"?v:null;
+  S.deep=S.deep||{};S.deep[t]={pace:one(A.pace),depth:one(A.depth),moods:A.moods,themes:A.themes,setting:A.setting,length:one(A.length),avoid:A.avoid.filter(x=>typeof x==="string"),
+   other:Object.fromEntries(Object.entries(A.other).filter(([k,v])=>v&&v.trim()).map(([k,v])=>[k,v.trim().slice(0,80)]))};
+  DRAFT=null;window.CALPICK=null;HOT=null;document.body.classList.remove("calwall");S.done[t]=1;save();render()};
+ const draw=()=>{a.replaceChildren();const q=A.q,Qq=Q[q],head=el("div",null,"sec"),bar=el("div",null,"bar"),fill=el("i");fill.style.width=Math.round((q+1)/DEEPN*100)+"%";bar.append(fill);
+  const top=el("div",null,"row between"),sw=el("button","Switch to quick taps","ghost tiny");sw.onclick=()=>{DRAFT=null;window.CALPICK=null;HOT=null;S.depth="quick";save();calib()};
+  top.append(el("div","Deep dive · "+(q+1)+" of "+DEEPN,"eyebrow"),sw);
+  head.append(top,bar,el("div",Qq.title,"disp pq"),el("div",Qq.sub,"mut"));const body=el("div",null,"sec duel in"),foot=el("div",null,"sec row between");a.append(head,body,foot);
+  const back=el("button","Back","ghost");back.disabled=q===0;back.onclick=()=>{A.q--;draw()};
+  const last=q===Q.length-1,next=el("button",null,"btn go");next.onclick=()=>{if(last)finish();else{A.q++;draw()}};
+  const cur=A[Qq.id],multi=Array.isArray(cur);
+  const label=()=>{const v=A[Qq.id],answered=(Array.isArray(v)?v.length>0:v!=null)||!!(A.other[Qq.id]||"").trim();next.textContent=last?"See my taste":answered?"Next":"Skip"};
+  document.body.classList.toggle("calwall",!!Qq.pick);
+  if(Qq.pick){ // choose one title from the sphere (or by searching)
+   const other=Qq.id==="lovedT"?A.hatedT:A.lovedT;
+   window.CALPICK=n=>{if(n===other){$("#st").textContent="That one’s already your other pick.";return}A[Qq.id]=n;HOT=n;syncMosaic();MZ.focus(n);draw()};
+   HOT=cur||null;syncMosaic();MZ.focus(cur||null);
+   if(cur){const row=allS(t).find(r=>r[0]===cur),cd=el("div",null,"dchosen"),ps=el("div",null,"dthumb");paintPoster(ps,cur,t);
+    const tx=el("div");tx.append(el("div",(Qq.pick==="loved"?"Loved":"Didn’t like")+(row&&row[1]?" · "+row[1]:""),"eyebrow"),el("div",cur,"disp ctitle"));
+    const ch=el("button","Choose another","ghost tiny");ch.onclick=()=>{A[Qq.id]=null;HOT=null;syncMosaic();MZ.focus(null);draw()};tx.append(ch);cd.append(ps,tx);body.append(cd)}
+   else body.append(el("div","Nothing chosen yet.","mut"));
+   const inp=el("input");inp.className="calsearch";inp.placeholder="Or search by name";inp.autocomplete="off";inp.setAttribute("aria-label","Search titles");
+   const res=el("div",null,"results"),show=()=>{const s=inp.value.trim().toLowerCase();res.replaceChildren();if(!s)return;
+    [...new Set(WALL[t].concat(allS(t).map(r=>r[0])))].filter(n=>n.toLowerCase().includes(s)&&n!==other).slice(0,5).forEach(n=>{const b=el("button",null,"res");b.append(el("span",n,"rn"),el("span",(allS(t).find(r=>r[0]===n)||[])[1]||"","mut"));b.onclick=()=>CALPICK(n);res.append(b)});
+    if(!res.childElementCount)res.append(el("div","Not in our list yet. Try the sphere, or skip.","mut"))};
+   inp.oninput=show;inp.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();const f=res.querySelector("button");if(f)f.click()}};body.append(inp,res)}
+  else{window.CALPICK=null;HOT=null;syncMosaic();MZ.focus(null);
+   if(Qq.id==="rank"){const list=el("div",null,"drank");
+    const paint=()=>{list.replaceChildren();CATS[t].forEach((c,k)=>{const pos=cur.indexOf(k),b=el("button",null,"pick drk"+(pos>=0?" sel":""));
+     b.append(el("span",pos>=0?String(pos+1):"","dnum"),ic(CE[t][k],22),el("div",FLAV[t][k],"pt2"));b.onclick=()=>{const i=cur.indexOf(k);if(i>=0)cur.splice(i);else cur.push(k);paint();label()};list.append(b)})};
+    paint();const rs=el("button","Clear","ghost tiny");rs.onclick=()=>{cur.length=0;paint();label()};body.append(list,rs)}
+   else{const opts=Qq.deal?Object.assign({},...DEAL[t].map((d,k)=>({[k]:d})),TR.flags[t]):Qq.opts,g=el("div",null,"dopts");
+    Object.entries(opts).forEach(([k,lab])=>{const key=Qq.deal&&/^\d$/.test(k)?+k:k,on=multi?cur.includes(key):cur===key,b=el("button",lab,"btn dopt"+(on?" on":""));
+     b.setAttribute("aria-pressed",on);
+     b.onclick=()=>{if(multi){const i=cur.indexOf(key);if(i>=0)cur.splice(i,1);else if(cur.length<Qq.max)cur.push(key);else{$("#st").textContent="Up to "+Qq.max+" here. Tap one again to swap it.";return}}else A[Qq.id]=cur===key?null:key;draw()};g.append(b)});
+    if(!multi){const b=el("button",Qq.ns||"Not sure, or it doesn’t matter","btn dopt ns"+(cur==="any"?" on":""));b.onclick=()=>{A[Qq.id]=cur==="any"?null:"any";draw()};g.append(b)}
+    if(Qq.other){const inp=el("input");inp.className="calsearch dother";inp.placeholder="Something else? Type it here";inp.value=A.other[Qq.id]||"";inp.setAttribute("aria-label","Something else");
+     inp.oninput=()=>{A.other[Qq.id]=inp.value;label()};inp.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();next.click()}};g.append(inp)}
+    body.append(g)}}
+  foot.append(back,next);label()};
+ draw();
+}
+
+// ---------- Step 2: ask about anything ----------
+function favs(it){const f=it.filter(i=>i.r>=7.5),d=it.filter(i=>i.r<4.5),ax=CATS[S.type];
+ return{f,d,fa:ax.map((_,k)=>avg((f.length?f:it).map(i=>i.s[k]))??7),da:ax.map((_,k)=>avg(d.map(i=>i.s[k])))}}
+const bar=(v,cls)=>{const b=el("div",null,"bar "+(cls||"")),i=el("i");i.style.width=Math.max(0,Math.min(100,v*10))+"%";b.append(i);return b};
+const CE={game:["swords","scroll","crystal","horn","compass"],movie:["scroll","reel","horn","lens","target"]},CC=["#e0715a","#a596f2","#e6b45a","#6fcab6","#79a6f0"];
+const ARCH={game:["The Mechanic","The Storyteller","The Aesthete","The Audiophile","The Dreamer"],movie:["The Storyteller","The Dreamer","The Audiophile","The Aesthete","The Purist"]};
+const hue=x=>{let h=0;for(const ch of x)h=(h*31+ch.charCodeAt(0))%360;return h};
+const poster=n=>"linear-gradient(165deg,hsl("+hue(n)+" 9% 26%),hsl("+((hue(n)+38)%360)+" 10% 11%))";
+function tasteCard(it){
+ const t=S.type,ax=CATS[t],{fa,da}=favs(it),w=weights(it),aw=avg(w);
+ const sc=ax.map((n,k)=>({k,n,v:fa[k]+2*(w[k]-aw)})).sort((a,b)=>b.v-a.v),nm=x=>ax[x.k].split(" / ")[0].toLowerCase();
+ const c=el("div");
+ const s1=el("div",null,"sec"),hd=el("div",null,"arch disp");hd.append(ic(CE[t][sc[0].k],30),el("span",ARCH[t][sc[0].k]));
+ s1.append(el("div",S.demo?"Demo profile · someone else’s ratings":"Your taste so far","eyebrow"),hd,
+  el("div",it.length?"You’re drawn to "+nm(sc[0])+" and "+nm(sc[1])+". The titles you love lean hardest on those.":"From your answers, "+nm(sc[0])+" and "+nm(sc[1])+" matter most to you. Rate a few titles to sharpen this.","mut"));
+ const dna=el("div",null,"dna"),H=[100,82,66,52,40],lab=["Must-have","Matters a lot","Matters","Nice to have","Flexible"];
+ sc.forEach((x,r)=>{const b=el("div",null,"blk");b.style.height=H[r]+"%";const mix=[100,80,62,48,36][r];b.style.background="color-mix(in srgb,var(--acc) "+mix+"%,#1b2126)";if(r>=3)b.classList.add("lt");b.append(ic(CE[t][x.k],18),el("div",x.n.split(" / ")[0],"bl"),el("div",lab[r],"bl2"));dna.append(b)});
+ const tags=el("div",null,"chips"),tg=(x,cl)=>tags.append(el("span",x,"chip "+cl)),deal=sc.filter(x=>da[x.k]!=null&&fa[x.k]-da[x.k]>=1.5).slice(0,2);
+ const P=prefsOf();let dl=deal;if(P&&P.deal>=0)dl=[sc.find(x=>x.k===P.deal)].concat(deal.filter(x=>x.k!==P.deal)).slice(0,2); // the one they named comes first
+ const easy=[...sc].reverse().find(x=>!dl.includes(x));
+ sc.slice(0,2).filter(x=>!dl.includes(x)).forEach(x=>tg("Loves "+nm(x),"g"));dl.forEach(x=>tg("Weak "+nm(x)+" is a dealbreaker","r"));if(easy)tg("Easygoing about "+nm(easy),"n");
+ s1.append(dna,tags);c.append(s1);
+ const D=deepOf();if(D){const o=d=>trOpts(d,t),dc=el("div",null,"chips"),add=(d,v)=>(Array.isArray(v)?v:[v]).forEach(x=>{if(x&&o(d)[x])dc.append(el("span",o(d)[x],"chip"))});
+  add("pace",D.pace);add("depth",D.depth);add("moods",D.moods);add("themes",D.themes);add("setting",D.setting);if(dc.childElementCount)s1.append(el("div","From your deep dive","eyebrow"),dc)}
+ return c;
+}
+function drawTaste(){const tb=$("#tastebox");if(!tb)return;tb.replaceChildren();const t=S.type,c=tasteCard(prof(t)),r2=el("div",null,"sec row"),re=el("button",S.demo?"Exit demo":"Redo taste check","btn");
+ re.onclick=()=>{if(S.demo)S.demo=false;else{S.done[t]=0;if(S.prefs)delete S.prefs[t];if(S.deep)delete S.deep[t]}save();HOT=null;render()};r2.append(re);c.append(r2);tb.append(c);syncMosaic()}
+const ZC=["#d65a43","#e2a43e","#a6c264","#66d6c0"];
+function gauge(p){
+ const ns="http://www.w3.org/2000/svg",mk=(t,at)=>{const e=document.createElementNS(ns,t);for(const k in at)e.setAttribute(k,at[k]);return e};
+ const svg=mk("svg",{viewBox:"0 0 220 140"}),pt=(v,r)=>{const a=Math.PI*(1-v/10);return[110+r*Math.cos(a),110-r*Math.sin(a)]};
+ [[0,4,ZC[0],"SKIP"],[4,5.5,ZC[1],"MAYBE"],[5.5,7,ZC[2],"LIKELY"],[7,10,ZC[3],"YES"]].forEach(([a,b,c,em])=>{
+  const[x1,y1]=pt(a+.06,84),[x2,y2]=pt(b-.06,84);svg.append(mk("path",{d:`M${x1} ${y1} A84 84 0 0 1 ${x2} ${y2}`,fill:"none",stroke:c,"stroke-width":14}));
+  const[ex,ey]=pt((a+b)/2,106),tx=mk("text",{x:ex,y:ey,"font-size":8,"font-weight":800,"letter-spacing":"1",fill:c,"text-anchor":"middle","dominant-baseline":"middle"});tx.textContent=em;svg.append(tx)});
+ for(let v=0;v<=10;v+=1){const[a1,b1]=pt(v,74),[a2,b2]=pt(v,70);svg.append(mk("line",{x1:a1,y1:b1,x2:a2,y2:b2,stroke:"currentColor","stroke-opacity":".35","stroke-width":1}))}
+ const nd=mk("g",{style:"transition:transform 1.2s cubic-bezier(.2,1.4,.4,1);transform-origin:110px 110px;transform:rotate(-90deg)"});
+ nd.append(mk("line",{x1:110,y1:110,x2:110,y2:44,stroke:"currentColor","stroke-width":3.5,"stroke-linecap":"round"}),mk("circle",{cx:110,cy:110,r:7,fill:"currentColor"}));svg.append(nd);
+ setTimeout(()=>{nd.style.transform="rotate("+((p/10)*180-90)+"deg)"},80);
+ const gi=mk("g",{transform:"translate(98 116)",fill:"none",stroke:"currentColor","stroke-width":1.7,"stroke-linecap":"round","stroke-linejoin":"round"});gi.innerHTML=IC[RI[S.type][p>=7.8?"loved":p>=6.5?"liked":p>=5?"meh":"disliked"]];svg.append(gi);
+ const w=el("div",null,"gauge");w.append(svg);return w}
+function main(){
+ document.body.classList.remove("calib","intro","calwall");window.CALPICK=null;$("#app").hidden=true;$("#intro").hidden=true;$("#app").replaceChildren();
+ $("#dock").hidden=false;$("#hint").hidden=false;
+ const t=S.type;drawTaste();
+ const a=$("#ask");a.hidden=false;a.replaceChildren();
+ const bar=el("div",null,"askbar panel");
+ const q=el("input");q.id="q";q.placeholder="Any "+(t==="game"?"game":"movie or show")+", add the year if it’s ambiguous";q.setAttribute("aria-label","Title to check");q.autocomplete="off";
+ const go=el("button","Will I like it?","btn go");
+ const rb=el("button",null,"btn sug");rb.append(ic("spark",16),el("span","Suggest 8","l"));rb.setAttribute("aria-label","Suggest 8 for me");rb.onclick=()=>recommend(null);
+ const mb=el("button",null,"btn sug");mb.append(ic("compass",16),el("span","More like this","l"));mb.setAttribute("aria-label","Suggest titles like this one");mb.hidden=true;mb.onclick=()=>{const v=q.value.trim();if(v)recommend(v)};
+ q.addEventListener("input",()=>{mb.hidden=!q.value.trim()});
+ bar.append(q,go,mb,rb);a.append(bar);
+ go.onclick=()=>rate(q.value.trim());q.addEventListener("keydown",e=>{if(e.key==="Enter")rate(q.value.trim())});
+}
+
+// Where the AI lives: inside Claude it uses Claude; on the public site it calls the site's own backend (/api/ask, Gemini free tier).
+const WEB={async json(prompt,opts){
+ for(let attempt=0;;attempt++){let r,d;
+  try{r=await fetch("/api/ask",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({prompt,tier:(opts&&opts.modelTier)||"default"}),signal:AbortSignal.timeout(90000)})}catch(e){throw e&&e.name==="TimeoutError"?{code:"busy",message:"timeout"}:{code:"offline",message:"can’t reach the scoring service. Check your connection"}}
+  try{d=await r.json()}catch(e){d={}}
+  if(r.ok){const x=d.result;if(d.backup&&x&&typeof x==="object")x.__backup=true;return x}
+  // Busy or rate-limited: wait a few seconds and try once more before giving up.
+  if(attempt===0&&(r.status===503||r.status===429)){await new Promise(w=>setTimeout(w,5000));continue}
+  throw{code:d.code||"error",message:d.error||("scoring service error "+r.status)}}}};
+async function ask(){
+ if(typeof window.claude?.use==="function"){let s=null;try{s=await claude.use("sample")}catch(e){}if(!s)$("#st").textContent="This page needs Claude access to score titles. Open it from your Claude account.";return s}
+ if(location.protocol==="file:"){$("#st").textContent="Scoring works on the published site, not from a file opened on your computer.";return null}
+ return WEB}
+const fail=e=>{$("#st").textContent=(e&&e.code==="not_granted")?"Permission to use Claude was declined, so scoring is unavailable.":(e&&e.code==="rate_limited")?"The free scoring limit is used up for now. Try again later (it resets daily).":(e&&e.code==="busy")?"The free AI is overloaded right now. Wait a minute and try again.":"That didn’t work ("+((e&&(e.message||e.code))||"unknown error")+"). Try again."};
+const anchors=t=>(S.demo?SEED[t].map(r=>[r[0],0,...r.slice(1)]):STARTERS[t]).map(r=>r[0]+": "+r.slice(2).join(", ")).join("\n");
+
+function scorePrompt(t,title,pass){const ax=CATS[t];
+ return `You are scoring a ${t==="game"?"video game":"movie or TV show"} on consensus quality (critics and audiences) for a taste app. Title requested: "${title}" (pass ${pass}).
+Score 0-10 on these categories in exactly this order: ${ax.join("; ")}.
+Reference scores to calibrate the scale, same order:
+${anchors(t)}
+Rules: score the exact title requested. Do not inflate; use decimals (for example 7.5) and the full range. If you do not recognise the exact title, or cannot tell which one is meant, set "known" to false and give no scores. Set "conf" to "low" when your knowledge of that aspect is thin.
+SPOILER RULE: never reveal plot events, twists, endings, deaths or surprises in "summary" or "why". Describe qualities (acting, pacing, art, music, gameplay feel) and the premise only.
+Also tag the title with "traits", using only the listed words.
+Reply with JSON only: {"known":true,"title":"official title","year":2020,"summary":"one spoiler-free sentence on the premise","scores":[{"s":7.5,"conf":"high|medium|low","why":"under 14 words"}],${traitAsk(t)}}`}
+
+function merge(rs){
+ const n=CATS[S.type].length,ok=rs.filter(x=>x&&x.known&&Array.isArray(x.scores)&&x.scores.length===n);
+ if(!ok.length)return{known:false};
+ const sc=CATS[S.type].map((c,i)=>{const p=ok.map(r=>r.scores[i]),v=p.map(x=>clamp(x.s)),sp=Math.max(...v)-Math.min(...v);
+  let cf=p.map(x=>RANK[x.conf]??1).reduce((a,b)=>Math.min(a,b),2);if(sp>1.5)cf=0;
+  return{c,s:Math.round(avg(v)*10)/10,conf:["low","medium","high"][cf],why:p[0].why||"",sp}});
+ const tr=(ok.find(r=>r.traits&&typeof r.traits==="object")||{}).traits||null;
+ return{known:true,title:ok[0].title,year:ok[0].year,summary:ok[0].summary,sc,traits:tr,backup:ok.some(r=>r.__backup)};
+}
+
+let RQ=0; // which check is current
+const ckey=(t,title)=>"tr5c_"+t+"_"+(S.demo?"d_":"")+title.toLowerCase().replace(/\s+/g," ");
+// Scores for a title without showing anything (used when rating titles picked from the wall).
+async function fetchScores(title){const t=S.type,key=ckey(t,title);let res=store.get(key);if(res)return res;
+ const s=await ask();if(!s)return null;
+ const rs=await Promise.allSettled(["A","B"].map(p=>s.json(scorePrompt(t,title,p),{modelTier:"complex",cache:false})));
+ const ok=rs.filter(r=>r.status==="fulfilled").map(r=>r.value);if(!ok.length){fail(rs[0].reason);return null}
+ res=merge(ok);if(res.known&&!res.backup)store.set(key,res);return res}
+async function rate(title){
+ if(!title)return;const t=S.type,key=ckey(t,title);
+ HOT=title;syncMosaic();MZ.focus(title);
+ let res=store.get(key);
+ if(!res){
+  const out=$("#out");out.replaceChildren();$("#recs").replaceChildren();openSheet();$("#sheet").scrollTop=0;
+  const ld=el("div",null,"sec");ld.append(el("div","Checking it against your taste","eyebrow"),el("div",title,"disp vtitle"),el("div",null,"skel g"),el("div",null,"skel l"),el("div",null,"skel l s"),el("div","Scoring it twice and averaging, so the verdict is steady.","mut"));out.append(ld);
+  const s=await ask();if(!s){closeSheet();return}
+  // Show the first pass the moment it lands; the second pass double-checks it in the background.
+  const tok=++RQ;let first=null;
+  const rs=await Promise.allSettled(["A","B"].map(p=>s.json(scorePrompt(t,title,p),{modelTier:"complex",cache:false}).then(v=>{
+   if(!first&&tok===RQ){const m=merge([v]);if(m.known){first=m;show(m);$("#st").textContent="Double-checking the scores…"}}return v})));
+  if(tok!==RQ)return; // the user has moved on to another title
+  const ok=rs.filter(r=>r.status==="fulfilled").map(r=>r.value);
+  $("#st").textContent="";
+  if(!ok.length){closeSheet();fail(rs[0].reason);return}
+  res=merge(ok);if(res.known&&!res.backup)store.set(key,res);
+  // Redraw only if the double-check really moved a score, keeping the reader's place.
+  if(first&&res.known&&res.sc.every((x,i)=>Math.abs(x.s-first.sc[i].s)<0.3))return;
+  if(first){const y=$("#sheet").scrollTop;show(res);$("#sheet").scrollTop=y;return}
+ }
+ $("#st").textContent="";show(res);
+}
+
+function show(res){
+ const out=$("#out");out.replaceChildren();const t=S.type,ax=CATS[t];$("#recs").replaceChildren();openSheet();$("#sheet").scrollTop=0;
+ if(!res.known){const c=el("div",null,"sec");c.append(el("div","Not sure what that is","eyebrow"),el("div","I don’t recognise that title well enough to score it honestly.","verdict"),el("div","Try the full official title and the year. I’d rather say “not sure” than invent numbers.","mut"));out.append(c);return}
+ if(HOT!==res.title){HOT=res.title;syncMosaic();MZ.focus(res.title)}
+ const v=res.sc.map(x=>x.s),it=prof(t),f=fit(v,it),tf=traitFit(res.traits,t),p=Math.round(clamp(f.pred+tf.adj)*10)/10,{fa}=favs(it),w=f.w,wm=Math.max(...w);
+ const unsure=res.sc.filter(x=>x.conf==="low").length>=3,few=it.length<(deepOf()?1:5);
+ let vt=verdict(p);if(unsure||few)vt="Not sure: "+vt.charAt(0).toLowerCase()+vt.slice(1)+(unsure?" (my knowledge of this title is thin)":it.length?" (rate a few more titles to sharpen this)":deepSaid()?" (based on your answers only; rate a few titles to sharpen it)":" (based on general quality only; rate a few titles or answer the deep dive)");
+ const zc=ZC[p>=7?3:p>=5.5?2:p>=4?1:0];
+ const h=el("div",null,"sec");
+ h.append(el("div",(res.year?res.year+" · ":"")+"spoiler-free","eyebrow"),el("div",res.title,"disp vtitle"),el("div",res.summary||"","mut"),gauge(p));
+ const vd=el("div",vt,"verdict");vd.style.color=zc;h.append(vd);
+ if(res.backup)h.append(el("div","Scored by the backup AI because Google’s free AI was busy, so treat this as a rough guide. Check it again later for a sharper verdict.","mut"));
+ const st=el("div",null,"stats"),stat=(n,l,c)=>{const d=el("div",null,"stat"),b=el("b",n);if(c)b.style.color=c;d.append(b,el("span",l));st.append(d)};
+ stat(p.toFixed(1),"Your match",zc);stat(avg(v).toFixed(1),"General quality");h.append(st);
+ const ml=el("button",null,"btn");ml.append(ic("spark",16),el("span","More like "+res.title));ml.onclick=()=>recommend(res.title);ml.style.alignSelf="flex-start";h.append(ml);out.append(h);
+ const rows=ax.map((n,k)=>({n,s:v[k],fv:fa[k],dl:v[k]-fa[k],imp:w[k]/wm}));
+ const pros=rows.filter(r=>r.s>=7.5&&r.dl>=-0.5).sort((x,y)=>y.s*y.imp-x.s*x.imp).slice(0,3);
+ const cons=rows.filter(r=>r.dl<=-1.5||r.s<6).sort((x,y)=>x.dl*x.imp-y.dl*y.imp).slice(0,2);
+ const why=el("div",null,"sec");why.append(el("div","Why "+(p>=6.5?"it should work for you":p>=5?"it’s a toss-up":"it may not suit you"),"h2"));
+ const tiles=el("div",null,"tiles"),tile=(r,good)=>{const ti=el("div",null,"tile "+(good?"ok":"no"));
+  ti.append(ic(CE[t][ax.indexOf(r.n)],30),el("div",r.n.split(" / ")[0],"tn"),el("div",good?(r.s>=9?"Top tier":"Strong")+(r.imp>0.85?" · your favourite thing":""):(r.imp>0.85?"Weak · and it matters to you":"Weak · matters less to you"),"ts"),el("div",good?"MATCH":"WATCH OUT","tb"));tiles.append(ti)};
+ pros.forEach(r=>tile(r,1));cons.forEach(r=>tile(r,0));
+ if(!pros.length&&!cons.length)tiles.append(el("div","Nothing stands out strongly either way.","mut"));
+ why.append(tiles);out.append(why);
+ if(tf.notes.length){const bs=el("div",null,"sec");bs.append(el("div","Beyond the scores","h2"),el("div","How it lines up with your deep-dive answers.","mut"));const ch=el("div",null,"chips");tf.notes.slice(0,6).forEach(n=>ch.append(el("span",n.x,"chip "+(n.g?"g":"r"))));bs.append(ch);out.append(bs)}
+ const rd=el("div",null,"sec radar");rd.append(el("div","Its shape against yours","h2"));
+ const near=f.nb[0],ser=[{v:fa,c:"#8e959b",d:"4 3"}];if(near)ser.push({v:near.i.s,c:"#f0a35e"});ser.push({v:v,c:"#7fdcc8",w:3});
+ rd.append(radar(ax,ser));const lg=el("div",null,"legend");lg.innerHTML='<span><span class="k" style="background:#7fdcc8"></span>This title</span>'+(near?'<span><span class="k" style="background:#f0a35e"></span>Closest of yours</span>':'')+'<span><span class="k" style="background:#8e959b"></span>Your favourites</span>';rd.append(lg);out.append(rd);
+ const cmp=el("div",null,"sec");cmp.append(el("div","How it compares to your favourites","h2"));
+ const cg=el("div",null,"cmp");rows.forEach(r=>{const bs=el("div",null,"bars");bs.append(bar(r.s),bar(r.fv,"a"));cg.append(el("div",r.n,"n"),el("div",r.s.toFixed(1)+" vs "+r.fv.toFixed(1),"v"),bs)});
+ cmp.append(cg,el("div","Closest to these in your profile","eyebrow"));
+ f.nb.slice(0,3).forEach(x=>{const rw=el("div",null,"near");rw.append(rface(x.i.r),el("span",x.i.n));cmp.append(rw)});
+ if(it.length)out.append(cmp);
+ if(!S.demo){const fb=el("div",null,"sec");fb.append(el("div","Already "+(t==="game"?"played":"watched")+" it? Tell us how it felt and your profile gets sharper.","mut"));
+  const bs=el("div",null,"row");Object.keys(LV).forEach(l=>{const bt=rbtn(l);bt.onclick=()=>{S.extra[t]=(S.extra[t]||[]).filter(i=>i.n!==res.title).concat({n:res.title,s:v,r:LV[l]});save();drawTaste();fb.replaceChildren(el("div","Added to your profile.","verdict"))};bs.append(bt)});
+  fb.append(bs);out.append(fb)}
+ const lk=f.nb.filter(x=>x.i.r>=7.5).slice(0,3);
+ if(lk.length){const s2=el("div",null,"sec");s2.append(el("div","Feels like the ones you loved","h2"));const wl=el("div",null,"wall");lk.forEach(x=>{const pp=el("div",null,"post");pp.style.background=poster(x.i.n);{const pe=PST.get(x.i.n,t);if(pe&&pe.url)pp.style.background="linear-gradient(rgba(10,12,14,0) 45%,rgba(10,12,14,.88)),url(\""+pe.url.replace(/"/g,"%22")+"\") center top/cover no-repeat"}pp.append(rface(x.i.r),el("div",x.i.n,"pt"));wl.append(pp)});s2.append(wl);out.append(s2)}
+}
+
+// ---------- Step 3: suggestions ----------
+let REC=[],SEEDT=null,RMODE="popular",RVER=null,RTRIED=new Set(); // RMODE: "popular" picks or "gems" (lesser-known titles)
+// ---- Movies & shows only: a hard quality bar, checked against real ratings ----
+// The AI proposes; OMDb (through the site's backend) reports the real IMDb rating and vote count,
+// Rotten Tomatoes and Metacritic. Anything below the bar, or that can't be found, is left out. The bar
+// is never lowered to fill the list. Games are not affected by any of this.
+const MOVIE_RULES=g=>`QUALITY RULES, strict: only suggest movies and shows with genuinely excellent reception from both audiences and critics: roughly IMDb 7.5 or higher from a large number of voters (tens of thousands or more), and strong critical reception (for example Rotten Tomatoes 75% or more where it exists). Never suggest mediocre, average or poorly reviewed titles, even if they match the genre. Include both Hollywood and Bollywood. Bollywood and other Indian titles must be widely recognised, well-established and acclaimed by audiences and critics (roughly IMDb 7.8 or higher with many votes): never obscure, little-known or poorly received ones. ${g?"Hidden gems here means acclaimed titles outside the biggest blockbusters and franchises, still well rated by many viewers, not obscure ones. ":""}Fewer excellent titles is better than any filler. Use the exact official title and the release year (the first season’s year for a show) so the ratings can be checked.`;
+function passQ(q,gems){if(!q||q.error||q.imdb==null||q.votes==null)return false;
+ const ind=q.india||q.hindi,series=q.type==="series";
+ if(q.imdb<(ind?7.8:7.5))return false;
+ if(q.votes<(ind?(gems?15000:40000):(gems?20000:series?40000:75000)))return false; // enough voters that the rating means something
+ if(q.rt!=null&&q.rt<(ind?80:75))return false;
+ if(q.mc!=null&&q.mc<60)return false;
+ return true}
+async function verifyMovies(list){const on=typeof window.claude?.use!=="function"&&/^https?:$/.test(location.protocol);if(!on||!list.length)return null;
+ try{const key=x=>x.title+(x.year?"~"+x.year:"");const r=await fetch("/api/verify?t="+encodeURIComponent(list.map(key).join("|")),{signal:AbortSignal.timeout(20000)});if(!r.ok)return null;
+  const d=await r.json();if(!d||!d.enabled)return null;const m=new Map();list.forEach(x=>m.set(x,d.ratings[key(x)]));
+  if([...m.values()].every(v=>!v||v.error))return null; // the ratings service is down: say so rather than drop everything
+  return m}catch(e){return null}}
+// Ask the AI for a batch, then (for movies & shows) keep only what passes the quality bar.
+async function fetchRecs(seed,exclude){
+ const t=S.type,it=prof(t),w=weights(it),movie=t==="movie",gems=RMODE==="gems",n=movie?16:12;
+ const list=f=>it.filter(i=>f(i.r)).map(i=>i.n).join("; ")||"none";
+ const top=CATS[t].map((n,k)=>[n,w[k]]).sort((x,y)=>y[1]-x[1]).slice(0,2).map(x=>x[0]).join(" and ");
+ const avoid=it.map(i=>i.n).concat(exclude||[]);
+ const prompt=`Suggest ${t==="game"?"video games":"movies or TV shows"} for one person. Loved: ${list(r=>r>=8.5)}. Liked: ${list(r=>r>=6.5&&r<8.5)}. Disliked: ${list(r=>r<4.5)}. Their taste leans on: ${top}.${deepText(t)} Never suggest anything already listed here: ${avoid.join("; ")}.${seed?`
+They want titles similar to "${seed}": close in genre, tone and what makes it good, while still fitting their taste. Never suggest "${seed}" itself.`:""}
+${gems?`Give ${n} real titles that are NOT mainstream hits or big franchises: critically loved but lesser-known picks (cult favourites, indie, regional or international gems) likely to suit them.${seed?"":" Make them varied."}`:`Give ${n} real, well-known, ${seed?"":"varied "}titles likely to suit them (not only sequels).`} Include only titles you are sure exist.${movie?"\n"+MOVIE_RULES(gems):""}
+For each give: "creator" (the ${t==="game"?"developer studio":"director, or the creator for a series"}); 2 short "genres" (one or two words each); "len", a tiny length label (like ${t==="game"?"\"40 h\" or \"8 h\" or \"endless\"":"\"2h 10m\" or \"3 seasons\""}); "why", under 14 words, naming what in their taste it matches (a title they loved or a preference); "highlight", under 9 words, the one distinctive thing that makes it worth trying; and 0-10 consensus "scores" in this category order (${CATS[t].join("; ")}), calibrated like these references:
+${anchors(t)}
+Tag each with "traits" using only the listed words.
+SPOILER RULE: "why" and "highlight" must never reveal plot events, twists, endings or deaths. Talk about premise and qualities only.
+JSON only: {"recs":[{"title":"","year":2020,"creator":"","genres":["",""],"len":"","why":"","highlight":"","scores":[7,7,7,7,7],${traitAsk(t)}}]}`;
+ const s=await ask();if(!s)return null;
+ const r=await s.json(prompt,{modelTier:"complex",cache:false});
+ const seen=new Set(avoid.map(x=>x.toLowerCase()));if(seed)seen.add(seed.toLowerCase());
+ const nums=a=>Array.isArray(a)?a.map(v=>v&&typeof v==="object"?v.s:v):[],strs=a=>Array.isArray(a)?a.filter(x=>typeof x==="string"&&x.trim()).slice(0,3):[];
+ let got=(r.recs||[]).filter(x=>x&&x.title&&nums(x.scores).length===CATS[t].length&&!seen.has(String(x.title).toLowerCase())).map(x=>({title:String(x.title),year:parseInt(x.year,10)||null,v:nums(x.scores).map(clamp),why:String(x.why||""),
+  creator:String(x.creator||""),genres:strs(x.genres),len:String(x.len||"").slice(0,16),highlight:String(x.highlight||""),traits:x.traits&&typeof x.traits==="object"?x.traits:null}));
+ got.forEach(x=>RTRIED.add(x.title));
+ if(!movie)return{list:got,ver:null};
+ $("#st").textContent="Checking real ratings…";
+ const m=await verifyMovies(got);$("#st").textContent="";
+ if(!m)return{list:got,ver:false};
+ got=got.filter(x=>{const q=m.get(x);if(!passQ(q,gems))return false;x.q=q;if(q.title)x.title=q.title;if(q.year)x.year=q.year;return true});
+ return{list:got,ver:true}}
+// Suggest 8 starts fresh, so the check result makes way. More like this keeps it and adds the list below.
+async function recommend(seed,rmode){
+ seed=typeof seed==="string"&&seed?seed:null;if(rmode)RMODE=rmode;
+ const t=S.type,rc=$("#recs"),out=$("#out");rc.replaceChildren();RTRIED=new Set();
+ if(!seed&&out.childElementCount){out.classList.add("leaving");HOT=null;syncMosaic();MZ.focus(null);setTimeout(()=>{out.replaceChildren();out.classList.remove("leaving")},210)}
+ $("#st").textContent="";
+ const ld=el("div",null,"sec fadein");ld.append(el("div",(RMODE==="gems"?"Finding hidden gems":"Finding picks")+(seed?" like "+seed:" for your taste"),"eyebrow"));
+ for(let k=0;k<3;k++){const r=el("div",null,"rskel");r.append(el("div",null,"skel rp"),el("div",null,"skel l"));ld.append(r)}rc.append(ld);openSheet();
+ if(seed&&out.childElementCount)ld.scrollIntoView({behavior:"smooth",block:"start"});else $("#sheet").scrollTop=0;
+ try{
+  const res=await fetchRecs(seed,[]);if(!res){rc.replaceChildren();return}
+  SEEDT=seed;REC=res.list;RVER=res.ver;
+  if(!REC.length){rc.replaceChildren();openSheet();rc.append(el("div",RVER?"None of this batch cleared the quality bar. Try again for a fresh batch.":"Couldn’t build a reliable list this time. Try again.","sec"));return}
+  renderRecs();
+ }catch(e){rc.replaceChildren();$("#st").textContent="";fail(e)}
+}
+// Movies & shows: when fewer than eight cleared the bar, fetch another batch rather than lower it.
+async function moreRecs(btn){btn.disabled=true;btn.textContent="Looking for more…";
+ try{const res=await fetchRecs(SEEDT,[...RTRIED]);if(res){const have=new Set(REC.map(x=>x.title.toLowerCase()));REC=REC.concat(res.list.filter(x=>!have.has(x.title.toLowerCase())));if(res.ver===false)RVER=false}
+  renderRecs()}catch(e){$("#st").textContent="";fail(e);btn.disabled=false;btn.textContent="Find more"}}
+// A poster in a box: the real one when the site can fetch it, a quiet tinted card otherwise.
+function paintPoster(box,name,t){box.style.backgroundImage=poster(name);box.classList.add("noimg");
+ const pe=PST.get(name,t);if(!pe)return;
+ const put=()=>{if(!pe.url)return false;box.style.backgroundImage="url(\""+pe.url.replace(/"/g,"%22")+"\")";box.classList.remove("noimg");return true};
+ if(!put()){let k=0;const iv=setInterval(()=>{if(put()||++k>30||!box.isConnected)clearInterval(iv)},400)}}
+// One suggestion: the artwork carries it. Tags, one line on why it suits you, one highlight.
+function recCard(x,p,tf,i,shape){
+ const t=S.type,pl=t==="game"?"played":"watched",d=el("article",null,"rc "+shape);d.style.animationDelay=(i*50)+"ms";
+ const art=el("div",null,"rart");paintPoster(art,x.title,t);
+ const m=el("div",null,"rm");m.style.setProperty("--z",ZC[p>=7?3:p>=5.5?2:p>=4?1:0]);m.append(el("b",p.toFixed(1)),el("span","match"));
+ const cap=el("div",null,"rcap");cap.append(el("div",x.title,"rtitle"),el("div",[x.creator,x.year].filter(Boolean).join(" · "),"rby"));
+ art.append(m);if(shape==="rtile")art.append(el("div",String(i+1).padStart(2,"0"),"rno"));
+ if(shape!=="hero"&&shape!=="wide")art.append(cap);
+ // rate it in place: the four reactions slide over the artwork
+ const ov=el("div",null,"rover"),og=el("div",null,"rr");ov.append(el("div","How was it?","rq"),og);
+ Object.keys(LV).forEach(l=>{const bt=rbtn(l);bt.onclick=e=>{e.stopPropagation();S.extra[t]=(S.extra[t]||[]).filter(z=>z.n!==x.title).concat({n:x.title,s:x.v,r:LV[l]});save();REC=REC.filter(y=>y!==x);drawTaste();renderRecs();$("#st").textContent="Added. Your taste profile just updated."};og.append(bt)});
+ const cl=el("button","Cancel","ghost tiny");cl.onclick=e=>{e.stopPropagation();d.classList.remove("rating")};ov.append(cl);art.append(ov);
+ const info=el("div",null,"rinfo");info.append(el("div",shape==="hero"?"Top pick":shape==="wide"?"Wildcard · worth a gamble":"",shape==="rtile"?"rnone":"eyebrow"));if(shape==="hero"||shape==="wide")info.append(cap);
+ const tg=el("div",null,"rtags");if(x.q&&x.q.imdb!=null){const v=el("span",null,"rtag rimdb");v.append(el("b","IMDb "),document.createTextNode(x.q.imdb.toFixed(1)));v.title=Math.round(x.q.votes).toLocaleString()+" IMDb votes";tg.append(v)}
+ if(x.q&&x.q.rt!=null)tg.append(el("span","RT "+x.q.rt+"%","rtag rimdb"));
+ x.genres.slice(0,2).forEach(z=>tg.append(el("span",z,"rtag")));if(x.len)tg.append(el("span",x.len,"rtag rlen"));if(tg.childElementCount)info.append(tg);
+ if(x.why){const w=el("div",null,"rwhy");w.append(el("span","For you","rlab"),document.createTextNode(x.why));info.append(w)}
+ if(x.highlight){const h=el("div",null,"rhi");h.append(el("span","✦","rstar"),document.createTextNode(x.highlight));info.append(h)}
+ if(shape==="hero"){const good=tf.notes.filter(n=>n.g).slice(0,2);if(good.length){const nt=el("div",null,"rnotes");good.forEach(n=>nt.append(el("span",n.x,"chip g")));info.append(nt)}}
+ const pb=el("button","Already "+pl+" it?","rplay");pb.onclick=()=>d.classList.add("rating");info.append(pb);
+ d.append(art,info);return d}
+function renderRecs(){
+ const t=S.type,it=prof(t),rc=$("#recs");rc.replaceChildren();openSheet();
+ const sc=REC.map(x=>{const tf=traitFit(x.traits,t);return{x,tf,p:Math.round(clamp(fit(x.v,it).pred+tf.adj)*10)/10}}).sort((a,b)=>b.p-a.p).slice(0,8);
+ syncMosaic();
+ if(!sc.length){rc.append(el("div","That’s all of this batch. Press “Suggest 8” for fresh picks based on your updated taste.","sec mut"));return}
+ const c=el("div",null,"sec rlist");
+ const rs=el("div",null,"seg recseg"),rp=el("button","Popular",RMODE==="popular"?"on":""),rg=el("button","Hidden gems",RMODE==="gems"?"on":"");
+ rp.onclick=()=>{if(RMODE!=="popular")recommend(SEEDT,"popular")};rg.onclick=()=>{if(RMODE!=="gems")recommend(SEEDT,"gems")};rs.append(rp,rg);
+ const hd=el("div",null,"rhead");hd.append(el("div",SEEDT?"More like "+SEEDT:"Suggested for you","eyebrow"),el("div",(RMODE==="gems"?"Hidden gems":SEEDT?"In the same spirit":"Eight worth your time")+(SEEDT||RMODE==="gems"?", for your taste":""),"h2"),rs);
+ const g=el("div",null,"rgrid"),rest=sc.length-1;
+ sc.forEach(({x,p,tf},i)=>g.append(recCard(x,p,tf,i,i===0?"hero":(rest%2===1&&i===sc.length-1&&sc.length>2)?"wide":"rtile")));
+ c.append(hd,g);
+ if(t==="movie"){const vf=el("div",null,"rver");
+  if(RVER){vf.append(el("span","Every pick here clears a real-ratings bar: IMDb 7.5+ with plenty of votes (7.8+ for Indian titles), and strong critic scores where they exist. Figures from OMDb."));
+   if(sc.length<8){vf.append(el("span"," Only "+sc.length+" cleared it this time."));const mb=el("button","Find more","btn");mb.onclick=()=>moreRecs(mb);vf.append(mb)}}
+  else vf.append(el("span",RVER===false?"Picked for strong ratings. The live rating check isn’t available right now, so these aren’t verified.":"Picked for strong ratings. Live rating checks run on the public site."));
+  c.append(vf)}
+ c.append(el("div","Spoiler-free, ranked by how well each one matches your taste. Rate one you’ve "+(t==="game"?"played":"watched")+" and it’s swapped for a new pick.","mut rfoot"));rc.append(c);
+ if(SEEDT&&$("#out").childElementCount)rc.scrollIntoView({behavior:"smooth",block:"start"});else $("#sheet").scrollTop=0;
+}
+
+function radar(labels,series){
+ const Z=380,C=Z/2,R=110,n=labels.length,ns="http://www.w3.org/2000/svg";
+ const mk=(t,at)=>{const e=document.createElementNS(ns,t);for(const k in at)e.setAttribute(k,at[k]);return e};
+ const svg=mk("svg",{viewBox:`0 0 ${Z} ${Z}`}),pt=(k,r)=>{const an=-Math.PI/2+2*Math.PI*k/n;return[C+r*Math.cos(an),C+r*Math.sin(an)]};
+ [2,4,6,8,10].forEach(l=>svg.append(mk("polygon",{points:labels.map((_,k)=>pt(k,R*l/10).join(",")).join(" "),fill:"none",stroke:"#8e959b","stroke-opacity":".25"})));
+ labels.forEach((lb,k)=>{const[x,y]=pt(k,R);svg.append(mk("line",{x1:C,y1:C,x2:x,y2:y,stroke:"#8e959b","stroke-opacity":".25"}));
+  const[tx,ty]=pt(k,R+22),tt=mk("text",{x:tx,y:ty,"font-size":11.5,"font-weight":600,fill:"currentColor","text-anchor":tx<C-5?"end":tx>C+5?"start":"middle","dominant-baseline":"middle"});tt.textContent=lb.split(" / ")[0];svg.append(tt)});
+ series.forEach(s=>svg.append(mk("polygon",{points:s.v.map((x,k)=>pt(k,R*clamp(x)/10).join(",")).join(" "),fill:s.c,"fill-opacity":s.w?".22":".06",stroke:s.c,"stroke-width":s.w||1.6,"stroke-dasharray":s.d||"none","stroke-linejoin":"round"})));
+ return svg;
+}
+
+// Posters: on the public site the backend finds each title's poster on Wikipedia, 12 titles per
+// request, and the answers are kept on this device so the next visit is instant. Inside Claude,
+// outside images can't load, so tiles stay plain.
+const PST=(()=>{const m=new Map(),pend=new Map();let LS={},timer=null;
+ const on=typeof window.claude?.use!=="function"&&/^https?:$/.test(location.protocol);
+ try{LS=JSON.parse(localStorage.getItem("tr_posters3")||"{}")||{}}catch(e){}
+ // the year helps pick the right article (the film, not a remake or a show of the same name)
+ const yearOf=(k,n)=>{const r=allS(k).find(x=>x[0]===n)||REC.map(x=>[x.title,x.year]).find(x=>x[0]===n);return r&&/^\d{4}$/.test(String(r[1]))?r[1]:""};
+ const load=(e,u)=>{e.url=u;const im=new Image();im.decoding="async";im.onload=()=>{e.img=im};im.src=u};
+ const flush=()=>{timer=null;for(const[k,set]of pend){const arr=[...set];set.clear();
+  for(let i=0;i<arr.length;i+=12){const chunk=arr.slice(i,i+12);
+   fetch("/api/posters?k="+k+"&t="+encodeURIComponent(chunk.map(n=>{const y=yearOf(k,n);return y?n+"~"+y:n}).join("|"))).then(r=>r.ok?r.json():null).then(d=>{if(!d||!d.posters){setTimeout(()=>chunk.forEach(n=>m.delete(k+"|"+n.toLowerCase())),15000);return}
+    chunk.forEach(n=>{const key=k+"|"+n.toLowerCase(),u=d.posters[n]||null;LS[key]=u;const e=m.get(key);if(u&&e&&!e.url)load(e,u)});
+    try{localStorage.setItem("tr_posters3",JSON.stringify(LS))}catch(e){}}).catch(()=>{})}}};
+ const entry=(n,k)=>{const key=k+"|"+n.toLowerCase();let e=m.get(key);
+  if(!e){e={};m.set(key,e);if(key in LS){if(LS[key])load(e,LS[key])}else{if(!pend.has(k))pend.set(k,new Set());pend.get(k).add(n);if(!timer)timer=setTimeout(flush,20)}}return e};
+ return{get:(n,k)=>on?entry(n,k):null,prefetch:(list,k)=>{if(on)list.forEach(n=>entry(n,k))}}})();
+
+// ---------- the poster wall (visual layer; clicking a title runs the same check as typing it) ----------
+// Poster-shaped tiles in staggered columns, bent like the inside of a sphere: big in the middle,
+// smaller toward the edges.
+const MZ=(()=>{
+ const cv=$("#field"),cx=cv.getContext("2d"),RM=matchMedia("(prefers-reduced-motion: reduce)").matches;
+ const TW=150,TH=225,GAP=16,SX=TW+GAP,SY=TH+GAP;
+ let W=0,H=0,dpr=1,cols=0,rows=0,place=new Map(),meta=new Map(),cam={x:0,y:0,z:1},tgt={x:0,y:0,z:1},
+  hover=null,fx=null,sel=null,ptrs=new Map(),moved=0,pinch=0,last=0,idle=0,rects=[];
+ const FONT=(w,s)=>w+" condensed "+s+"px Archivo, 'Arial Narrow', sans-serif";
+ const z0=()=>wide()?W/(6.4*SX):W/(2.6*SX);
+ const FE=()=>wide()?.8:.6; // how strongly the wall bends, like the inside of a sphere
+ const cellXY=(c,r)=>[c*SX+TW/2,r*SY+TH/2+(c%2?SY/2:0)];
+ // The wall wraps around in both directions, so it never ends. worldW/worldH are one full turn.
+ const worldW=()=>cols*SX,worldH=()=>rows*SY;
+ const nc=(v,ref,L)=>v-L*Math.round((v-ref)/L); // the copy of v nearest to ref
+ function size(){W=innerWidth;H=innerHeight;dpr=Math.min(2,devicePixelRatio||1);cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);cv.style.width=W+"px";cv.style.height=H+"px";if(!cam.z||cam.z===1&&!cols){cam.z=tgt.z=z0()}}
+ function reset(list){const n=Math.max(list.length,8);let best=null;
+  for(let r=4;r<=9;r++){let c=Math.ceil(n/r);if(c%2)c++;const empty=c*r-n,shape=Math.abs(c*SX/(r*SY)-1.6);const sc=empty+shape*6;if(!best||sc<best[0])best=[sc,c,r]}
+  cols=best[1];rows=best[2];place=new Map();
+  const cxw=worldW()/2,cyw=worldH()/2,free=[];for(let c=0;c<cols;c++)for(let r=0;r<rows;r++){const[x,y]=cellXY(c,r);free.push([c,r,(x-cxw)**2+((y-cyw)*1.3)**2])}
+  free.sort((a,b)=>a[2]-b[2]);list.forEach((x,i)=>place.set(x.n,[free[i][0],free[i][1]]));
+  cam.x=tgt.x=cxw;cam.y=tgt.y=cyw;cam.z=tgt.z=z0()}
+ function set(list){
+  const names=new Set(list.map(x=>x.n));let keep=0;for(const n of place.keys())if(names.has(n))keep++;
+  list.forEach(x=>meta.set(x.n,{tag:x.tag||"",tone:x.tone||0,year:x.year||""}));
+  if(!cols||keep<list.length*.5){reset(list);return}
+  for(const n of [...place.keys()])if(!names.has(n))place.delete(n);
+  const used=new Set([...place.values()].map(p=>p.join(",")));
+  for(const x of list){if(place.has(x.n))continue;
+   let best=null,bd=1e18;for(let c=0;c<cols;c++)for(let r=0;r<rows;r++){if(used.has(c+","+r))continue;const[wx,wy]=cellXY(c,r),d=(nc(wx,cam.x,worldW())-cam.x)**2+(nc(wy,cam.y,worldH())-cam.y)**2;if(d<bd){bd=d;best=[c,r]}}
+   if(!best){best=[cols,Math.floor(rows/2)];cols+=2}
+   place.set(x.n,best);used.add(best.join(","))}}
+ function offset(){if(document.body.classList.contains("calib"))return wide()?[210,0]:[0,-H*.22];
+  if(document.body.classList.contains("sheet-open"))return wide()?[-56,0]:[0,-H*.34];return[0,0]}
+ function focus(n){fx=n;if(!n||!place.has(n))return;sel=n;const[c,r]=place.get(n),[wx,wy]=cellXY(c,r),[ox,oy]=offset();tgt.z=Math.max(tgt.z,z0()*1.1);tgt.x=nc(wx-ox/tgt.z,tgt.x,worldW());tgt.y=nc(wy-oy/tgt.z,tgt.y,worldH())}
+ function clampCam(k){const lo=z0()*.6,hi=z0()*2.4;k.z=Math.max(lo,Math.min(hi,k.z))} // only zoom has limits: the wall has no edges
+ // world -> screen with the sphere bend; returns position and how much this spot is shrunk
+ function proj(wx,wy){const sx=(wx-cam.x)*cam.z,sy=(wy-cam.y)*cam.z,R=Math.max(W,H)*.62,d=Math.hypot(sx,sy)/R,k=1/Math.sqrt(1+FE()*d*d);return[W/2+sx*k,H/2+sy*k,k]}
+ const unproj=(sx,sy)=>[(sx-W/2)/cam.z+cam.x,(sy-H/2)/cam.z+cam.y];
+ function pick(x,y){for(let i=rects.length-1;i>=0;i--){const q=rects[i];if(x>=q.x&&x<=q.x+q.w&&y>=q.y&&y<=q.y+q.h)return q.n}return null}
+ function wrap(words,maxw){const L=[];let cur="";for(const w of words){const t=cur?cur+" "+w:w;if(cx.measureText(t).width>maxw&&cur){L.push(cur);cur=w}else cur=t}if(cur)L.push(cur);return L}
+ const rrect=(x,y,w,h,r)=>{cx.beginPath();if(cx.roundRect)cx.roundRect(x,y,w,h,r);else cx.rect(x,y,w,h)};
+ function tile(n,x,y,w,h,k,lit,hot){
+  const mt=meta.get(n)||{},base=mt.tone?1:0,pe=PST.get(n,S.type),img=pe&&pe.img,rad=w*.07;
+  cx.save();
+  if(lit){cx.shadowColor="rgba(0,0,0,.6)";cx.shadowBlur=24;cx.shadowOffsetY=8}
+  rrect(x,y,w,h,rad);const g=cx.createLinearGradient(x,y,x+w*.6,y+h);const hu=hue(n);
+  g.addColorStop(0,"hsl("+hu+" 8% "+(lit?30:base?24:18)+"%)");g.addColorStop(1,"hsl("+((hu+38)%360)+" 10% "+(lit?14:base?11:8)+"%)");cx.fillStyle=g;cx.fill();
+  cx.restore();cx.save();rrect(x,y,w,h,rad);cx.clip();
+  if(img){ // the poster fills its tile edge to edge (cropped only by the poster's own small difference from 2:3)
+   const iw=img.naturalWidth,ih=img.naturalHeight,s=Math.max(w/iw,h/ih),sw=w/s,sh=h/s;cx.drawImage(img,(iw-sw)/2,(ih-sh)*.2,sw,sh,x,y,w,h);
+  }else{ // plain tile: the title in type
+   let fs=Math.min(w*.2,46),L;for(let i=0;i<8;i++){cx.font=FONT(850,fs);L=wrap(n.toUpperCase().split(/\s+/),w*.84);if(Math.max(...L.map(l=>cx.measureText(l).width))<=w*.84&&L.length*fs*.95<=h*.62)break;fs*=.88}
+   if(fs>=5){const lh=fs*.95,ty=y+h/2-L.length*lh/2+lh*.78;cx.textAlign="center";cx.fillStyle=lit?"#fff8ec":base?"rgba(236,230,218,.92)":"rgba(236,230,218,.55)";L.forEach((l,i)=>cx.fillText(l,x+w/2,ty+i*lh));
+    if(mt.year&&!mt.tag&&fs*.4>=5){cx.font=FONT(700,fs*.4);cx.fillStyle="rgba(236,230,218,.5)";cx.fillText(String(mt.year),x+w/2,ty-lh)}}}
+  // calm the wall: titles that aren't yours sit back, and the edges of the sphere fade
+  const dim=(lit?0:base?.05:.36)+(1-k)*.9;if(dim>0){cx.fillStyle="rgba(10,12,14,"+Math.min(.85,dim)+")";cx.fillRect(x,y,w,h)}
+  if(img&&lit){const fs=Math.max(8,Math.min(w*.085,17));cx.font=FONT(850,fs);const L=wrap(n.toUpperCase().split(/\s+/),w*.86).slice(0,2),lh=fs*1.05,bh=L.length*lh+fs*1.1;
+   const gb=cx.createLinearGradient(0,y+h-bh*1.8,0,y+h);gb.addColorStop(0,"rgba(10,12,14,0)");gb.addColorStop(.45,"rgba(10,12,14,.85)");gb.addColorStop(1,"rgba(10,12,14,.95)");cx.fillStyle=gb;cx.fillRect(x,y+h-bh*1.8,w,bh*1.8);
+   cx.fillStyle="#fff8ec";cx.textAlign="center";L.forEach((l,i)=>cx.fillText(l,x+w/2,y+h-bh+fs*.55+lh*.8+i*lh))}
+  if(mt.tag){const sz=Math.max(7,Math.min(w*.06,12));cx.font=FONT(800,sz);const tw=cx.measureText(mt.tag).width+sz*1.4,th=sz*1.7;rrect(x+w/2-tw/2,y+sz*.7,tw,th,th/2);
+   cx.fillStyle=mt.tone===2?"rgba(127,220,200,.95)":"rgba(10,12,14,.82)";cx.fill();cx.fillStyle=mt.tone===2?"#0e1114":"#ece6da";cx.textAlign="center";cx.textBaseline="middle";cx.fillText(mt.tag,x+w/2,y+sz*.7+th/2+sz*.05);cx.textBaseline="alphabetic"}
+  cx.restore();
+  if(hot||mt.tone===2){rrect(x,y,w,h,rad);cx.lineWidth=hot?2.5:1.5;cx.strokeStyle=hot?"#ece6da":"rgba(127,220,200,.8)";cx.stroke()}}
+ function draw(){
+  cx.setTransform(dpr,0,0,dpr,0,0);cx.fillStyle="#0d1013";cx.fillRect(0,0,W,H);
+  const vis=[],used=new Set();
+  const WW=worldW(),WH=worldH();
+  const copies=(wx,wy,fn)=>{const bx=nc(wx,cam.x,WW),by=nc(wy,cam.y,WH);for(let i=-1;i<=1;i++)for(let j=-1;j<=1;j++)fn(bx+i*WW,by+j*WH)};
+  for(const[n,[c,r]]of place){used.add(c+","+r);const[wx0,wy0]=cellXY(c,r),lit=n===fx||n===hover||n===sel;
+   copies(wx0,wy0,(wx,wy)=>{const[px,py,k]=proj(wx,wy),s=k*k*cam.z*(lit?1.07:1),w=TW*s,h=TH*s;
+    if(px+w<0||px-w>W||py+h<0||py-h>H)return;vis.push({n,x:px-w/2,y:py-h/2,w,h,k,lit,hot:n===fx||n===sel})})}
+  // empty slots keep the wall's rhythm
+  for(let c=0;c<cols;c++)for(let r=0;r<rows;r++){if(used.has(c+","+r))continue;const[wx0,wy0]=cellXY(c,r);
+   copies(wx0,wy0,(wx,wy)=>{const[px,py,k]=proj(wx,wy),s=k*k*cam.z,w=TW*s,h=TH*s;
+    if(px+w<0||px-w>W||py+h<0||py-h>H)return;rrect(px-w/2,py-h/2,w,h,w*.07);cx.fillStyle="rgba(255,255,255,"+(.025*k)+")";cx.fill()})}
+  vis.sort((a,b)=>(a.lit-b.lit)||(a.k-b.k));
+  for(const v of vis)tile(v.n,v.x,v.y,v.w,v.h,v.k,v.lit,v.hot);
+  rects=vis}
+ function frame(ts){const dt=Math.min(50,ts-(last||ts));last=ts;idle+=dt;
+  const follow=sel||fx;
+  if(follow&&!ptrs.size&&place.has(follow)){const[c,r]=place.get(follow),[wx,wy]=cellXY(c,r),[ox,oy]=offset();const gx=nc(wx-ox/tgt.z,tgt.x,worldW()),gy=nc(wy-oy/tgt.z,tgt.y,worldH());tgt.x+=(gx-tgt.x)*.1;tgt.y+=(gy-tgt.y)*.1}
+  else if(!RM&&!ptrs.size&&idle>4000){tgt.x+=dt*.012} // a slow, endless turn
+  const WW=worldW(),WH=worldH();if(WW&&Math.abs(cam.x)>WW*3){const sh=WW*Math.round(cam.x/WW);cam.x-=sh;tgt.x-=sh}if(WH&&Math.abs(cam.y)>WH*3){const sh=WH*Math.round(cam.y/WH);cam.y-=sh;tgt.y-=sh}
+  clampCam(tgt);const e=RM?1:.09;cam.x+=(tgt.x-cam.x)*e;cam.y+=(tgt.y-cam.y)*e;cam.z+=(tgt.z-cam.z)*e;
+  draw();requestAnimationFrame(frame)}
+ const at=e=>{const b=cv.getBoundingClientRect();return[(e.clientX-b.left)*W/b.width,(e.clientY-b.top)*H/b.height]};
+ cv.addEventListener("pointerdown",e=>{cv.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.clientX,e.clientY]);moved=0;idle=0;if(ptrs.size===2){const[a,b]=[...ptrs.values()];pinch=Math.hypot(a[0]-b[0],a[1]-b[1])}});
+ cv.addEventListener("pointermove",e=>{const p=ptrs.get(e.pointerId);
+  const pt=at(e);
+  if(!p){if(e.pointerType==="mouse"){idle=0;return} // the mouse only looks around; arrow keys choose
+   hover=pick(pt[0],pt[1]);return}
+  idle=0;
+  if(ptrs.size===2){ptrs.set(e.pointerId,[e.clientX,e.clientY]);const[a,b]=[...ptrs.values()],d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(pinch){tgt.z*=d/pinch;clampCam(tgt);cam.z=tgt.z}pinch=d;moved=99;return}
+  const dx=e.clientX-p[0],dy=e.clientY-p[1];moved+=Math.abs(dx)+Math.abs(dy);ptrs.set(e.pointerId,[e.clientX,e.clientY]);
+  if(moved>6){fx=null;sel=null;cv.classList.add("pan");tgt.x-=dx/cam.z;tgt.y-=dy/cam.z;cam.x=tgt.x;cam.y=tgt.y}});
+ const up=e=>{if(!ptrs.has(e.pointerId))return;ptrs.delete(e.pointerId);if(ptrs.size<2)pinch=0;cv.classList.remove("pan");
+  if(moved<=6&&e.type==="pointerup"&&e.pointerType!=="mouse"){const pt=at(e),n=pick(pt[0],pt[1]);if(n&&API.onPick)API.onPick(n)}}; // taps on touch screens still pick
+ cv.addEventListener("pointerup",up);cv.addEventListener("pointercancel",up);cv.addEventListener("pointerleave",()=>{if(!ptrs.size)hover=null});
+ cv.addEventListener("wheel",e=>{e.preventDefault();idle=0;const pt=at(e),[wx,wy]=unproj(pt[0],pt[1]);tgt.z*=Math.exp(-e.deltaY*.0015);clampCam(tgt);
+  tgt.x=wx-(pt[0]-W/2)/tgt.z;tgt.y=wy-(pt[1]-H/2)/tgt.z;fx=null;sel=null},{passive:false});
+ addEventListener("resize",()=>{const old=z0();size();const nz=z0();cam.z*=nz/old;tgt.z*=nz/old});
+ size();
+ // Arrow keys: left/right step to the next column (the poster nearest in height), up/down within a column.
+ function move(dx,dy){idle=0;
+  const occ=new Map([...place].map(([n,p])=>[p.join(","),n]));
+  const WW=worldW(),WH=worldH(),md=(a,m)=>((a%m)+m)%m;
+  if(!sel||!place.has(sel)){let best=null,bd=1e18;for(const[n,[c,r]]of place){const[wx,wy]=cellXY(c,r),d=(nc(wx,cam.x,WW)-cam.x)**2+(nc(wy,cam.y,WH)-cam.y)**2;if(d<bd){bd=d;best=n}}sel=best;fx=null;return sel}
+  const[c,r]=place.get(sel),[,y0]=cellXY(c,r);
+  if(dx){for(let k=1;k<=cols;k++){const cc=md(c+dx*k,cols);let best=null,bd=1e18;for(let rr=0;rr<rows;rr++){const n=occ.get(cc+","+rr);if(!n)continue;const d=Math.abs(nc(cellXY(cc,rr)[1],y0,WH)-y0);if(d<bd){bd=d;best=n}}if(best){sel=best;break}}}
+  else{for(let k=1;k<=rows;k++){const n=occ.get(c+","+md(r+dy*k,rows));if(n){sel=n;break}}}
+  fx=null;return sel}
+ const API={set,focus,move,swoop(){cam.z=tgt.z*.45;idle=0},selected:()=>sel,onPick:null,start(){requestAnimationFrame(frame)},hovered:()=>{const q=rects.find(r=>r.n===hover);return q?{n:hover,x:q.x,y:q.y,w:q.w,h:q.h}:null}};return API})();
+
+function syncMosaic(){
+ const t=S.type,seen=new Set(),list=[],add=(n,o)=>{if(!n||seen.has(n.toLowerCase()))return;seen.add(n.toLowerCase());list.push(Object.assign({n},o||{}))};
+ const calibrating=!(S.done[t]||S.demo);
+ // fetch the common posters first, in a fixed order, so every visitor shares the same cached batches
+ PST.prefetch(WALL[t],t);
+ if(HOT)add(HOT,{tone:1});
+ prof(t).forEach(i=>add(i.n,{tag:LBL[rlev(i.r)].toUpperCase(),tone:1}));
+ REC.forEach(x=>add(x.title,{tag:"PICK FOR YOU",tone:2,year:x.year}));
+ const yr=Object.fromEntries(allS(t).map(r=>[r[0],r[1]]));
+ WALL[t].forEach(n=>add(n,{year:yr[n]||"",tone:calibrating&&S.slots[t].includes(n)?1:0}));
+
+ MZ.set(list);
+}
+// Keyboard: arrows move the highlight on the wall, Enter picks it, Esc leaves a text box.
+addEventListener("keydown",e=>{const tg=e.target,typing=tg&&(tg.tagName==="INPUT"||tg.tagName==="TEXTAREA"||tg.isContentEditable);
+ if(typing){if(e.key==="Escape")tg.blur();return}
+ const d={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];
+ if(d){e.preventDefault();if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();MZ.move(d[0],d[1]);return}
+ if(e.key==="Enter"&&MZ.selected()&&(!tg||tg===document.body)){e.preventDefault();MZ.onPick(MZ.selected())}});
+MZ.onPick=n=>{if(document.body.classList.contains("calib")){if(window.CALPICK)CALPICK(n);return}const q=$("#q");if(q)q.value=n;rate(n)};
+render();MZ.start();
+</script>
+
+</body></html>
