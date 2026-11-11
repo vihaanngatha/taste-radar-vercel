@@ -170,6 +170,14 @@ body.intro .seg,body.intro #tf,body.intro #tasteBtn{visibility:hidden}
  text-shadow:0 1px 0 rgba(0,0,0,.55),0 10px 40px rgba(0,0,0,.65)}
 .moshi.gone{opacity:0;transform:scale(1.04)}
 .moshibg{position:fixed;inset:0;z-index:30;background:radial-gradient(120% 90% at 40% 30%,#1a1d21,#0b0d10);transition:opacity .45s;cursor:pointer}
+/* the radar opening */
+.rdr{position:fixed;inset:0;z-index:30;cursor:pointer;outline:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.rdr-bg{position:absolute;inset:0;background:radial-gradient(120% 90% at 40% 30%,#1a1d21,#0b0d10)}
+.rdr .moshi{position:absolute}
+.rdr-title{position:absolute;inset:0;display:grid;place-items:center;padding-inline:16px;text-align:center;opacity:0;pointer-events:none}
+.rdr-w{display:block;font-family:"Cormorant Garamond","Cormorant",Georgia,serif;font-style:italic;font-weight:300;font-size:clamp(20px,2.6vw,38px);line-height:1;color:var(--mut);margin-bottom:.35em;white-space:nowrap}
+.rdr-t{display:inline-block;font-family:var(--disp);font-stretch:62%;font-weight:800;font-size:clamp(46px,11vw,170px);line-height:.9;text-transform:uppercase;white-space:nowrap;color:var(--fg)}
+.rdr-cv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 body.opening #intro .q2{opacity:0}
 #intro .q2{transition:opacity .5s ease}
 
@@ -458,7 +466,7 @@ const RMO=matchMedia("(prefers-reduced-motion: reduce)").matches;
 function intro(){
  document.body.classList.add("intro","calib","opening");$("#dock").hidden=true;$("#ask").hidden=true;$("#hint").hidden=true;$("#app").hidden=true;
  const ov=$("#intro");ov.hidden=false;ov.replaceChildren(choose()); // the question page waits underneath, hidden
- moshi();
+ radarIntro();
 }
 const revealQuestion=()=>document.body.classList.remove("opening");
 
@@ -1069,6 +1077,91 @@ function makeStory(hx,hy,tp,rp){const tall=H>W*1.05,sc=Math.min(H*.34,W*(tall?.5
  addEventListener("resize",()=>{if(phase==="idle")layout()});
  window.__glass=()=>({phase,t:Math.round(phase==="idle"?0:gnow()-t0),pieces:shards.length,shards:fine.length});
  layout();if(!ACT)cv.focus({preventScroll:true});if(ACT)start(opts.x,opts.y);requestAnimationFrame(frame);if(ACT)setTimeout(()=>{if(phase!=="done")bail("watchdog: the opening took too long")},8000);
+}
+// ---------- Opening: "Moshi Moshi", then the radar arm fights the name into place (canvas 2D, about 2 s) ----------
+// Three beats, each a wind-up, a snap, a freeze on impact and a consequence: a ping strikes "Moshi Moshi" and knocks it
+// apart, the arm whips under and stamps TASTE, then over the top and stamps RADAR, the hardest hit. One calm sweep then
+// wipes the opening away and uncovers the question page underneath. A click or key during it skips to the question.
+function radarIntro(){
+ const now=()=>window.__glassNow??performance.now(); // a test can pin the animation time; visitors use the real clock
+ const cl=v=>Math.max(0,Math.min(1,v)),lerp=(a,b,t)=>a+(b-a)*t,out3=t=>1-Math.pow(1-t,3),in3=t=>t*t*t,io=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+ const rnd=(a,b)=>a+Math.random()*(b-a),TAU=Math.PI*2,ACC="127,220,200";
+ const root=el("div",null,"rdr"),bg=el("div",null,"rdr-bg"),words=el("div",null,"moshi"),sp=el("span","Moshi Moshi"),title=el("div",null,"rdr-title"),box=el("div"),wEl=el("span","welcome to","rdr-w"),tEl=el("span",null,"rdr-t");
+ words.append(sp);words.setAttribute("aria-hidden","true");title.setAttribute("aria-hidden","true");box.append(wEl,tEl);title.append(box);
+ const cv=document.createElement("canvas");cv.className="rdr-cv";const x=cv.getContext("2d");
+ root.append(bg,words,title,cv);root.tabIndex=0;root.setAttribute("role","button");root.setAttribute("aria-label","Moshi Moshi. Click or press any key to continue.");
+ document.body.append(root);root.focus({preventScroll:true});
+ let W=0,H=0,state="idle",raf=0,wd=0,t0=0;
+ const fit=()=>{W=innerWidth;H=innerHeight;const d=Math.min(2,devicePixelRatio||1);cv.width=Math.round(W*d);cv.height=Math.round(H*d);x.setTransform(d,0,0,d,0,0)};fit();
+ const onResize=()=>{if(state==="idle")fit()};addEventListener("resize",onResize);
+ const q2=()=>document.querySelector("#intro .q2");
+ const showQuestion=()=>{const q=q2();if(q){q.style.transition="none";revealQuestion();q.offsetWidth;q.style.transition=""}else revealQuestion()};
+ // the end, or a skip: the question page is there underneath, so just let the opening go
+ function finish(skip){if(state==="done")return;state="done";cancelAnimationFrame(raf);clearTimeout(wd);removeEventListener("keydown",onKey);removeEventListener("resize",onResize);
+  root.style.transform="";if(skip){revealQuestion();root.style.transition="opacity .35s ease";root.style.opacity="0";setTimeout(()=>root.remove(),380)}else{showQuestion();root.remove()}}
+ const onKey=e=>{if(e.key==="Tab"||e.metaKey||e.ctrlKey||e.altKey)return;e.preventDefault();if(state==="idle")start(innerWidth/2,innerHeight/2);else if(state==="play"&&now()-t0>400)finish(true)};
+ addEventListener("keydown",onKey);
+ root.addEventListener("pointerdown",e=>{if(state==="idle")start(e.clientX,e.clientY);else if(state==="play"&&now()-t0>400)finish(true)});
+ window.__glass=()=>({phase:state==="play"?"go":state,t:state==="idle"?0:Math.round(now()-t0)});
+
+ function start(px,py){state="play";t0=now();wd=setTimeout(()=>finish(true),7000); // never stuck: whatever happens, the question shows
+  if(RMO){words.style.transition="opacity .25s";words.style.opacity="0";tEl.textContent="Taste Radar";title.style.transition="opacity .3s .15s";title.style.opacity="1";
+   clearTimeout(wd);wd=setTimeout(()=>finish(true),1100);return}
+  fit();
+  const cx=W/2,cy=H/2,R=Math.hypot(W,H)/2+20,rr=Math.min(W,H)*.46;
+  // the words become things that can be hit
+  sp.textContent="";const letters=[..."Moshi Moshi"].map(ch=>{const e=el("span",ch===" "?" ":ch);e.style.display="inline-block";sp.append(e);return e});
+  const parts=["Taste","Radar"].map((w,i)=>{const e=el("span",w);e.style.cssText="display:inline-block;opacity:0"+(i?";margin-left:.24em":"");tEl.append(e);return e});
+  wEl.style.opacity="0";title.style.opacity="1";
+  const mid=e=>{const r=e.getBoundingClientRect();return[r.left+r.width/2,r.top+r.height/2]},cT=mid(parts[0]),cR=mid(parts[1]);
+  // the timeline, in animation time; real time also holds still for a moment at each hit
+  const T1=140,W0=T1+200,H2=W0+190,R1=H2+120,H3=R1+210,SET=H3+430,END=SET+700,STOPS=[[T1,50],[H2,70],[H3,115]],HOLD=STOPS.reduce((a,b)=>a+b[1],0);
+  const warp=ms=>{let t=ms;for(const [at,d] of STOPS){if(t<=at)break;t=Math.max(at,t-d)}return t};
+  const A0=Math.PI-2.2,theta=t=>t<W0?A0-.5*out3(cl((t-T1)/(W0-T1))):t<H2?lerp(A0-.5,Math.PI,in3((t-W0)/(H2-W0))):t<R1?Math.PI-.25*out3((t-H2)/(R1-H2)):t<H3?lerp(Math.PI-.25,TAU,in3((t-R1)/(H3-R1))):t<SET?TAU:TAU+io(cl((t-SET)/620))*TAU;
+  const blips=[...Array(10)].map(()=>{const a=rnd(0,TAU),r=rr*rnd(.3,1);return{a,x:cx+Math.cos(a)*r,y:cy+Math.sin(a)*r,lit:0}});
+  const shakes=[],hits=[];let stage=0,prevTh=A0,revealed=false;
+  const hit=(ms,p,big,amp)=>{hits.push({ms,p,big,lines:[...Array([7,12,20][big])].map(()=>({a:rnd(0,TAU),r:rnd(20,70),l:rnd(40,[70,100,160][big])}))});shakes.push({at:ms,amp,dur:[220,300,440][big]})}; // big: 0 tap, 1 hit, 2 the finisher
+  const stamp=(e,stop)=>e.animate([{opacity:0,transform:"scale(1.8)",filter:"blur(10px)"},{opacity:1,transform:"scale(.97)",filter:"blur(0)",offset:.7},{opacity:1,transform:"scale(1)",filter:"blur(0)"}],{duration:150+stop,fill:"forwards",easing:"cubic-bezier(.6,0,.9,.3)"});
+  const frame=()=>{if(state!=="play")return;try{
+   const ms=Math.max(0,now()-t0),t=warp(ms),th=theta(t);
+   // the last sweep: the opening is wiped away behind the arm, and the question page is already there underneath
+   if(t>=SET){if(!revealed){revealed=true;showQuestion()}
+    const deg=io(cl((t-SET)/620))*360,m=`conic-gradient(from 90deg at 50% 50%, transparent ${deg}deg, #000 ${Math.min(360,deg+5)}deg)`;
+    for(const e of [bg,title]){e.style.webkitMaskImage=m;e.style.maskImage=m}}
+   if(stage===0&&t>=T1){stage=1;hit(ms,[cx,cy],0,4);        // beat 1: the word is struck and knocked loose
+    letters.forEach(e=>{const m=mid(e),dx=m[0]-cx,dy=m[1]-cy,d=Math.hypot(dx,dy)||1,vx=dx/d*rnd(140,330)+rnd(-40,40),vy=-rnd(60,220);
+     e.animate([{transform:"translate(0,0) rotate(0deg)",opacity:1,easing:"cubic-bezier(.1,.6,.4,1)"},{transform:`translate(${vx*.55}px,${vy}px) rotate(${rnd(-40,40)}deg)`,opacity:.7,offset:.42,easing:"cubic-bezier(.5,0,.9,.5)"},{transform:`translate(${vx*1.25}px,${H*.26}px) rotate(${rnd(-190,190)}deg)`,opacity:0}],{duration:rnd(300,380),delay:40,fill:"forwards"})});
+    wEl.animate([{opacity:0},{opacity:1}],{duration:320,delay:160,fill:"forwards"})}
+   if(stage===1&&t>=H2){stage=2;hit(ms,cT,1,8);stamp(parts[0],70)}     // beat 2: the arm whips under and stamps TASTE
+   if(stage===2&&t>=H3){stage=3;hit(ms,cR,2,16);stamp(parts[1],115)}    // beat 3: over the top, harder, RADAR
+   let ox=0,oy=0;for(const s of shakes){const u=(ms-s.at)/s.dur;if(u>=0&&u<1){const a=s.amp*(1-u)*(1-u);ox+=Math.sin(ms*.11+s.at)*a;oy+=Math.cos(ms*.13+s.at)*a}}
+   root.style.transform=ox||oy?`translate(${ox.toFixed(1)}px,${oy.toFixed(1)}px)`:"";
+   x.clearRect(0,0,W,H);
+   if(t<T1){ // beat 1's messenger: a ping leaves the click and darts into the word
+    const u=t/T1,e=u*u,hx=lerp(px,cx,e),hy=lerp(py,cy,e),g=x.createLinearGradient(px,py,hx,hy);g.addColorStop(0,`rgba(${ACC},0)`);g.addColorStop(1,`rgba(${ACC},.9)`);
+    x.strokeStyle=g;x.lineWidth=2.5;x.lineCap="round";x.beginPath();x.moveTo(px,py);x.lineTo(hx,hy);x.stroke();
+    x.beginPath();x.arc(hx,hy,4,0,TAU);x.fillStyle="#fff";x.fill();x.beginPath();x.arc(px,py,out3(u)*46,0,TAU);x.strokeStyle=`rgba(${ACC},${.7*(1-u)})`;x.lineWidth=1.5;x.stroke()}
+   else{const fade=1-cl((t-SET-540)/160),inn=cl((t-T1)/140);x.save();x.globalAlpha=fade*inn;
+    x.strokeStyle=`rgba(${ACC},.16)`;x.lineWidth=1;for(let i=1;i<=4;i++){x.beginPath();x.arc(cx,cy,rr*i/4,0,TAU);x.stroke()}
+    x.beginPath();x.moveTo(cx-rr,cy);x.lineTo(cx+rr,cy);x.moveTo(cx,cy-rr);x.lineTo(cx,cy+rr);x.stroke();
+    // the arm: its trail is its own speed, so the wind-up is a thin line and the snap is a blade
+    const back=theta(Math.max(T1,t-40)),dA=Math.max(-.42,Math.min(.42,th-back)),n=14;
+    if(Math.abs(dA)>.01)for(let i=0;i<n;i++){const a1=th-dA*(i+1)/n,a2=th-dA*i/n;x.beginPath();x.moveTo(cx,cy);x.arc(cx,cy,R,Math.min(a1,a2),Math.max(a1,a2));x.closePath();x.fillStyle=`rgba(${ACC},${.2*Math.pow(1-i/n,2.4)})`;x.fill()}
+    x.beginPath();x.moveTo(cx,cy);x.lineTo(cx+Math.cos(th)*R,cy+Math.sin(th)*R);x.strokeStyle=`rgba(${ACC},.95)`;x.lineWidth=2;x.stroke();
+    x.beginPath();x.arc(cx,cy,4,0,TAU);x.fillStyle=`rgba(${ACC},.9)`;x.fill();
+    const lo=Math.min(prevTh,th),hi=Math.max(prevTh,th);
+    for(const b of blips){for(const a of [b.a,b.a+TAU])if(a>=lo&&a<=hi&&hi-lo>.001)b.lit=ms;if(!b.lit)continue;const since=ms-b.lit,al=Math.max(0,1-since/600);if(al<=0)continue;
+     x.beginPath();x.arc(b.x,b.y,3,0,TAU);x.fillStyle=`rgba(${ACC},${al})`;x.fill();x.beginPath();x.arc(b.x,b.y,3+since*.04,0,TAU);x.strokeStyle=`rgba(${ACC},${al*.5})`;x.stroke()}
+    prevTh=th;x.restore()}
+   for(const h of hits){ // every hit: flash, shock ring, streaks
+    const im=ms-h.ms,fu=cl(im/240),su=cl(im/[300,440,640][h.big]),lu=cl(im/300),[hx,hy]=h.p,fr=[130,200,320][h.big];
+    if(fu<1){const g=x.createRadialGradient(hx,hy,0,hx,hy,fr);g.addColorStop(0,`rgba(255,255,255,${[.4,.6,.8][h.big]*(1-fu)})`);g.addColorStop(.4,`rgba(${ACC},${.25*(1-fu)})`);g.addColorStop(1,`rgba(${ACC},0)`);x.fillStyle=g;x.fillRect(hx-fr,hy-fr,fr*2,fr*2)}
+    if(su<1){x.beginPath();x.arc(hx,hy,out3(su)*rr*[.45,.8,1.6][h.big],0,TAU);x.strokeStyle=`rgba(255,255,255,${.42*(1-su)})`;x.lineWidth=1+5*(1-su);x.stroke()}
+    if(lu<1){x.save();x.strokeStyle=`rgba(255,255,255,${.8*(1-lu)})`;x.lineWidth=1.6;x.lineCap="round";x.beginPath();
+     for(const l of h.lines){const r1=l.r+out3(lu)*[150,220,340][h.big],r2=r1+l.l*(1-lu);x.moveTo(hx+Math.cos(l.a)*r1,hy+Math.sin(l.a)*r1);x.lineTo(hx+Math.cos(l.a)*r2,hy+Math.sin(l.a)*r2)}x.stroke();x.restore()}}
+   if(ms>=END+HOLD){finish(false);return}
+   raf=requestAnimationFrame(frame)}catch(err){try{console.error("opening error",err)}catch(_){}finish(true)}};
+  raf=requestAnimationFrame(frame)}
 }
 // The question: the second chapter, in the same glass language.
 function choose(){
